@@ -44,7 +44,7 @@ const formatDate = (dateString) => {
 
 // Utility function to format currency
 const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'INR' }).format(amount);
 };
 
 // Reusable Modal Component
