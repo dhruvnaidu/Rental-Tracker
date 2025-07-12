@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This rule allows any authenticated user (including anonymous)
+    // to read and write to their own private data.
+    // Data path: /artifacts/{appId}/users/{userId}/{collectionName}/{documentId}
+    // Example: /artifacts/rentaltrackerapp/users/YOUR_USER_ID/properties/PROPERTY_DOC_ID
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
