@@ -191,7 +191,7 @@ const App = () => {
 
   const __app_id = firebaseConfig.projectId;
 
-  // Firebase Initialization and Authentication
+// Firebase Initialization and Authentication
   useEffect(() => {
     try {
       const app = initializeApp(firebaseConfig);
@@ -215,6 +215,7 @@ const App = () => {
       console.error("Failed to initialize Firebase:", error);
       setIsAuthReady(true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogout = async () => {
