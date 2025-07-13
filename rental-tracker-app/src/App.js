@@ -35,6 +35,7 @@ import {
 const AppContext = createContext(null);
 
 // Utility function to format date for display
+// eslint-disable-next-line no-unused-vars
 const formatDate = (dateString) => {
   if (!dateString) return '-';
   const date = new Date(dateString);
@@ -200,7 +201,7 @@ const App = () => {
 
   // Your web app's Firebase configuration
   const firebaseConfig = {
-    apiKey: "AIzaSyAQJm88i3gwaGzvhJMxONzUr78tZqBRfXs",
+    apiKey: "AIzaSyAQJm88i3gwaGzvhJMxONzUr78tZqBRXXs",
     authDomain: "rentaltrackerapp.firebaseapp.com",
     projectId: "rentaltrackerapp",
     storageBucket: "rentaltrackerapp.firebasestorage.app",
@@ -795,7 +796,7 @@ const PropertyManager = () => {
   const [newLeaseStartDate, setNewLeaseStartDate] = useState('');
   const [newLeaseEndDate, setNewLeaseEndDate] = useState('');
   const [newSecurityDepositAmount, setNewSecurityDepositAmount] = useState('');
-  const [newLeaseTerm, setNewLeaseTerm] = useState('');
+  const [newLeaseTerm, setNewLeaseTerm] = '';
   // New fields for rent increment amount and effective date
   const [newRentIncrementAmount, setNewRentIncrementAmount] = useState('');
   const [newRentIncrementEffectiveDate, setNewRentIncrementEffectiveDate] = useState('');
@@ -3408,7 +3409,7 @@ const Reminders = () => {
 
 // --- Export System Component ---
 const ExportSystem = () => {
-  const { db, userId, isAuthReady, __app_id, formatDate } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [rentRecords, setRentRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
