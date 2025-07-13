@@ -34,13 +34,35 @@ import {
 // Context for Firebase and User
 const AppContext = createContext(null);
 
-// Utility function to format date for display
-// eslint-disable-next-line no-unused-vars
+// Utility function to format date for display (timezone-safe)
 const formatDate = (dateString) => {
   if (!dateString) return '-';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const parts = dateString.split('-'); // Expect YYYY-MM-DD format
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
+    const day = parseInt(parts[2], 10);
+
+    // Construct date in local timezone to avoid UTC interpretation issues
+    const date = new Date(year, month, day);
+
+    // Verify if the date object truly represents the intended date in local time
+    // This check helps catch subtle parsing issues in some environments
+    if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === day) {
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    } else {
+      console.warn(`Date construction mismatch for ${dateString}: Expected ${year}-${month+1}-${day}, got ${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}. Falling back to explicit local parsing.`);
+      // Fallback to simpler string parsing if explicit construction fails unexpectedly
+      // Appending 'T00:00:00' explicitly tells the browser to parse the string as local time at midnight
+      const fallbackDate = new Date(dateString + 'T00:00:00');
+      return isNaN(fallbackDate.getTime()) ? '-' : fallbackDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+  } else {
+    // For any other format, try direct parsing but it's less reliable for timezone
+    console.warn("Non-YYYY-MM-DD dateString format in formatDate:", dateString);
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
 };
 
 // Utility function to format date for HTML date input (YYYY-MM-DD)
@@ -761,30 +783,32 @@ const Dashboard = () => {
       {/* Expense Breakdown by Category */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-semibold text-gray-800 mb-4">Expense Breakdown by Category (Selected Period)</h3>
-        {expenseBreakdownByCategory.length === 0 ? (
-          <p className="text-gray-600 text-center py-4">No expense data for category breakdown.</p>
-        ) : (
-          <div className="relative h-64 w-full flex items-end justify-around border-b border-l border-gray-300 pt-4">
-            {expenseBreakdownByCategory.map(([category, amount]) => (
-              <div
-                key={category}
-                className="flex flex-col items-center justify-end h-full mx-1"
-                style={{ width: `${100 / expenseBreakdownByCategory.length - 2}%`, height: `${Math.max(0, amount / Math.max(...expenseBreakdownByCategory.map(([, a]) => a), 1) * 90)}%` }}
-                title={`${category}: ${formatCurrency(amount)}`}
-              >
+        <div className="relative h-64 w-full flex items-end justify-around border-b border-l border-gray-300 pt-4">
+          {expenseBreakdownByCategory.length === 0 ? (
+            <p className="text-gray-600 text-center py-10 w-full">No expense data for category breakdown.</p>
+          ) : (
+            <>
+              {expenseBreakdownByCategory.map(([category, amount]) => (
                 <div
-                  className="w-full rounded-t-md bg-orange-500"
-                  style={{ height: '100%' }} // Bar height is controlled by parent div's height
-                ></div>
-                <span className="text-xs text-gray-600 mt-1 text-center">{category}</span>
+                  key={category}
+                  className="flex flex-col items-center justify-end h-full mx-1"
+                  style={{ width: `${100 / expenseBreakdownByCategory.length - 2}%`, height: `${Math.max(0, amount / Math.max(...expenseBreakdownByCategory.map(([, a]) => a), 1) * 90)}%` }}
+                  title={`${category}: ${formatCurrency(amount)}`}
+                >
+                  <div
+                    className="w-full rounded-t-md bg-orange-500"
+                    style={{ height: '100%' }} // Bar height is controlled by parent div's height
+                  ></div>
+                  <span className="text-xs text-gray-600 mt-1 text-center">{category}</span>
+                </div>
+              ))}
+              <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-xs text-gray-500 -ml-8">
+                <span>{formatCurrency(Math.max(...expenseBreakdownByCategory.map(([, a]) => a)))}</span>
+                <span>0</span>
               </div>
-            ))}
-            <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-xs text-gray-500 -ml-8">
-              <span>{formatCurrency(Math.max(...expenseBreakdownByCategory.map(([, a]) => a)))}</span>
-              <span>0</span>
-            </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1615,109 +1639,134 @@ const MonthlyRentTracker = () => {
 
     const generateAndIncrementRecords = async () => {
       const today = new Date();
+      // Normalize 'today' to start of day in local timezone for consistent comparison
+      today.setHours(0, 0, 0, 0);
+
       const currentMonth = today.getMonth() + 1;
       const currentYear = today.getFullYear();
 
       for (const property of properties) {
         for (const unit of property.units) {
-          const moveInDate = new Date(unit.moveInDate);
-          if (isNaN(moveInDate.getTime())) {
-            console.warn(`Invalid moveInDate for unit ${unit.id}: ${unit.moveInDate}`);
+          console.log(`--- Processing Unit: ${unit.number} (${unit.tenantName}) ---`);
+          console.log(`Raw unit.moveInDate from Firestore: ${unit.moveInDate}`);
+
+          const moveInDateParts = unit.moveInDate.split('-');
+          const moveInYear = parseInt(moveInDateParts[0], 10);
+          const moveInMonthIndex = parseInt(moveInDateParts[1], 10) - 1; // Month is 0-indexed
+          const moveInDay = parseInt(moveInDateParts[2], 10);
+          const moveInDateObj = new Date(moveInYear, moveInMonthIndex, moveInDay); // Construct as local date
+
+          if (isNaN(moveInDateObj.getTime())) {
+            console.warn(`Invalid moveInDate for unit ${unit.id}: ${unit.moveInDate}. Skipping rent generation for this unit.`);
             continue;
           }
+          console.log(`Parsed moveInDateObj (Local): ${moveInDateObj.toISOString().slice(0, 10)}`);
 
-          // Determine the rent due day from move-in date
-          const rentDueDay = moveInDate.getDate();
+          const rentDueDay = moveInDateObj.getDate();
+          const startYearForGeneration = moveInDateObj.getFullYear();
+          const startMonthForGeneration = moveInDateObj.getMonth() + 1; // 1-indexed month
 
-          // Iterate for past months up to current month to ensure all records are generated
-          // Start from the month after move-in or the current year's January, whichever is later
-          const startMonth = Math.max(1, moveInDate.getMonth() + 1);
-          const startYear = moveInDate.getFullYear();
+          console.log(`Rent due day: ${rentDueDay}, Generation starts from: ${startMonthForGeneration}/${startYearForGeneration}`);
 
-          for (let year = startYear; year <= currentYear; year++) {
-            let monthToStart = (year === startYear) ? startMonth : 1;
-            let monthToEnd = (year === currentYear) ? currentMonth : 12;
+          for (let year = startYearForGeneration; year <= currentYear; year++) {
+            let currentLoopMonthStart = (year === startYearForGeneration) ? startMonthForGeneration : 1;
+            let currentLoopMonthEnd = (year === currentYear) ? currentMonth : 12;
 
-            for (let month = monthToStart; month <= monthToEnd; month++) {
-              const targetDate = new Date(year, month - 1, rentDueDay); // Use rentDueDay
+            for (let month = currentLoopMonthStart; month <= currentLoopMonthEnd; month++) {
+              // Construct target date for the first day of the month, then adjust to rentDueDay
+              const targetDate = new Date(year, month - 1, rentDueDay); // Construct as local date
               const targetMonthYearString = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
-              // Only generate if the target month/year is not in the future
-              if (targetDate > today) continue;
+              console.log(`  Attempting to generate for Month: ${month}, Year: ${year}. Target Date: ${targetDate.toISOString().slice(0, 10)}`);
 
-              // Check if rent record for this unit and target month already exists
+              // Skip if targetDate is in the future.
+              // The loop bounds (startYearForGeneration, startMonthForGeneration, currentYear, currentMonth)
+              // already ensure we start generation from the move-in month and don't go past the current month.
+              // The previous condition `if (year < moveInYear || (year === moveInYear && month < (moveInMonthIndex + 1)))`
+              // is implicitly handled by the loop's start values.
+              // The day-level check `if (year === moveInYear && month === (moveInMonthIndex + 1) && rentDueDay < moveInDay)`
+              // was removed as per user's clarification: rent starts in the move-in month regardless of the day.
+              if (targetDate > today) {
+                console.log(`    Skipping: Target date ${targetDate.toISOString().slice(0, 10)} is in the future (today is ${today.toISOString().slice(0, 10)}).`);
+                continue;
+              }
+
               const existingRecord = rentRecords.find(
                 r => r.unitId === unit.id && r.monthYear === targetMonthYearString
               );
 
-              if (!existingRecord) {
-                let currentUnitRent = parseFloat(unit.rentAmount || 0);
-                const rentIncrementAmount = parseFloat(unit.rentIncrementAmount || 0);
-                const rentIncrementEffectiveDate = unit.rentIncrementEffectiveDate ? new Date(unit.rentIncrementEffectiveDate) : null;
+              if (existingRecord) {
+                console.log(`    Skipping: Record for ${targetMonthYearString} already exists.`);
+                continue;
+              }
 
-                // Apply rent increment if applicable for this period
-                if (rentIncrementAmount > 0 && rentIncrementEffectiveDate && targetDate >= rentIncrementEffectiveDate) {
-                  // Check if the increment should be applied for this specific rent record's month
-                  const incrementAppliedForThisRecord = (
-                    rentIncrementEffectiveDate.getFullYear() < year ||
-                    (rentIncrementEffectiveDate.getFullYear() === year && rentIncrementEffectiveDate.getMonth() + 1 <= month)
-                  );
+              console.log(`    *** Generating new rent record for ${unit.number} for ${targetMonthYearString} ***`);
+              // ... rest of the addDoc logic
+              let currentUnitRent = parseFloat(unit.rentAmount || 0);
+              const rentIncrementAmount = parseFloat(unit.rentIncrementAmount || 0);
+              const rentIncrementEffectiveDate = unit.rentIncrementEffectiveDate ? new Date(unit.rentIncrementEffectiveDate) : null;
 
-                  // To avoid applying increment repeatedly for past months,
-                  // we only apply it if the unit's stored rentAmount is the base rent
-                  // and the increment effective date is met in the current generation cycle.
-                  // A more robust way would be to calculate rent based on a rent history.
-                  // For simplicity, we'll apply it once the effective date is reached for the first time.
-                  // We need to fetch the latest unit data to ensure we're not using stale rentAmount.
-                  const latestUnitDoc = await getDocs(query(collection(db, `artifacts/${__app_id}/users/${userId}/properties/${property.id}/units`), where('id', '==', unit.id)));
-                  const latestUnitData = latestUnitDoc.docs[0]?.data();
-                  if (latestUnitData) {
-                    currentUnitRent = parseFloat(latestUnitData.rentAmount || 0);
-                    // If the increment effective date is met AND the current rent amount in Firestore
-                    // does not yet reflect this specific increment amount, then apply it.
-                    // This relies on the assumption that `rentIncrementAmount` is a one-time addition.
-                    if (incrementAppliedForThisRecord &&
-                        (currentUnitRent < (parseFloat(unit.rentAmount) + rentIncrementAmount))) { // Check if original rent + increment is greater than current
-                        currentUnitRent = parseFloat(unit.rentAmount) + rentIncrementAmount;
-                        // Update the unit's base rent in Firestore to reflect the increment
-                        const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${property.id}/units`, unit.id);
-                        await updateDoc(unitDocRef, {
-                            rentAmount: currentUnitRent,
-                            // Optionally, clear or update rentIncrementAmount/EffectiveDate if it's a one-time application
-                            // For annual, you'd keep it and just update rentAmount.
-                        });
-                        console.log(`Applied rent increment for unit ${unit.number}. New rent: ${currentUnitRent}`);
-                    }
+              // Apply rent increment if applicable for this period
+              if (rentIncrementAmount > 0 && rentIncrementEffectiveDate && targetDate >= rentIncrementEffectiveDate) {
+                // Check if the increment should be applied for this specific rent record's month
+                const incrementAppliedForThisRecord = (
+                  rentIncrementEffectiveDate.getFullYear() < year ||
+                  (rentIncrementEffectiveDate.getFullYear() === year && rentIncrementEffectiveDate.getMonth() + 1 <= month)
+                );
+
+                // To avoid applying increment repeatedly for past months,
+                // we only apply it if the unit's stored rentAmount is the base rent
+                // and the increment effective date is met in the current generation cycle.
+                // A more robust way would be to calculate rent based on a rent history.
+                // For simplicity, we'll apply it once the effective date is reached for the first time.
+                // We need to fetch the latest unit data to ensure we're not using stale rentAmount.
+                const latestUnitDoc = await getDocs(query(collection(db, `artifacts/${__app_id}/users/${userId}/properties/${property.id}/units`), where('id', '==', unit.id)));
+                const latestUnitData = latestUnitDoc.docs[0]?.data();
+                if (latestUnitData) {
+                  currentUnitRent = parseFloat(latestUnitData.rentAmount || 0);
+                  // If the increment effective date is met AND the current rent amount in Firestore
+                  // does not yet reflect this specific increment amount, then apply it.
+                  // This relies on the assumption that `rentIncrementAmount` is a one-time addition.
+                  if (incrementAppliedForThisRecord &&
+                      (currentUnitRent < (parseFloat(unit.rentAmount) + rentIncrementAmount))) { // Check if original rent + increment is greater than current
+                      currentUnitRent = parseFloat(unit.rentAmount) + rentIncrementAmount;
+                      // Update the unit's base rent in Firestore to reflect the increment
+                      const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${property.id}/units`, unit.id);
+                      await updateDoc(unitDocRef, {
+                          rentAmount: currentUnitRent,
+                          // Optionally, clear or update rentIncrementAmount/EffectiveDate if it's a one-time application
+                          // For annual, you'd keep it and just update rentAmount.
+                      });
+                      console.log(`Applied rent increment for unit ${unit.number}. New rent: ${currentUnitRent}`);
                   }
                 }
+              }
 
-                // Calculate the exact due date for the current month's rent
-                // Handle cases where moveInDate day is > days in target month (e.g., Feb 30th)
-                const lastDayOfTargetMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
-                const finalRentDueDay = Math.min(rentDueDay, lastDayOfTargetMonth);
-                const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
+              // Calculate the exact due date for the current month's rent
+              // Handle cases where moveInDate day is > days in target month (e.g., Feb 30th)
+              const lastDayOfTargetMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+              const finalRentDueDay = Math.min(rentDueDay, lastDayOfTargetMonth);
+              const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
 
-                console.log(`Generating rent record for ${unit.number} (${unit.tenantName}) for ${targetMonthYearString}, Due: ${rentDueDate}`);
-                try {
-                  await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), {
-                    propertyId: property.id,
-                    propertyName: property.name,
-                    unitId: unit.id,
-                    unitNumber: unit.number,
-                    tenantName: unit.tenantName,
-                    amount: currentUnitRent, // Use the potentially incremented rent
-                    monthYear: targetMonthYearString,
-                    isPaid: false,
-                    dueDate: rentDueDate, // Store the specific due date
-                    paymentDate: null, // New field
-                    amountReceived: 0, // New field
-                    isPartialPayment: false, // New field
-                    partialReason: '', // New field
-                    createdAt: new Date().toISOString(),
-                  });
-                } catch (e) {
-                  console.error("Error auto-generating rent record: ", e);
-                }
+              try {
+                await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), {
+                  propertyId: property.id,
+                  propertyName: property.name,
+                  unitId: unit.id,
+                  unitNumber: unit.number,
+                  tenantName: unit.tenantName,
+                  amount: currentUnitRent, // Use the potentially incremented rent
+                  monthYear: targetMonthYearString,
+                  isPaid: false,
+                  dueDate: rentDueDate, // Store the specific due date
+                  paymentDate: null, // New field
+                  amountReceived: 0, // New field
+                  isPartialPayment: false, // New field
+                  partialReason: '', // New field
+                  createdAt: new Date().toISOString(),
+                });
+              } catch (e) {
+                console.error("Error auto-generating rent record: ", e);
               }
             }
           }
@@ -1749,8 +1798,30 @@ const MonthlyRentTracker = () => {
 
   const arrearsRecords = useMemo(() => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize 'today' to start of day
 
     return rentRecords.filter(record => {
+      // Find the corresponding unit to get its moveInDate
+      const unit = properties.flatMap(p => p.units).find(u => u.id === record.unitId);
+      // If unit or moveInDate is missing, skip this record (shouldn't happen with proper data)
+      if (!unit || !unit.moveInDate) {
+        console.warn(`Arrears: Skipping record ${record.id} due to missing unit or moveInDate.`);
+        return false;
+      }
+
+      const moveInDateObj = new Date(unit.moveInDate);
+      // Normalize moveInDateObj to the first day of its month for comparison
+      const moveInMonthStart = new Date(moveInDateObj.getFullYear(), moveInDateObj.getMonth(), 1);
+
+      const recordDate = new Date(record.monthYear); // This will be YYYY-MM-01
+      recordDate.setHours(0, 0, 0, 0);
+
+      // Crucial check: If the rent record's month is BEFORE the move-in month, it's not valid arrears.
+      if (recordDate < moveInMonthStart) {
+        console.log(`Arrears: Skipping record ${record.id} (${record.monthYear}) because it's before move-in month ${unit.moveInDate}.`);
+        return false;
+      }
+
       // A record is in arrears if:
       // 1. It's not fully paid (amount due > amount received)
       // 2. The due date has passed
@@ -1758,16 +1829,17 @@ const MonthlyRentTracker = () => {
       if (amountRemaining <= 0) return false; // Fully paid or overpaid
 
       const dueDate = record.dueDate ? new Date(record.dueDate) : new Date(record.monthYear);
-      dueDate.setHours(23, 59, 59, 999); // Set to end of day for accurate overdue check
+      dueDate.setHours(0, 0, 0, 0); // Normalize due date to start of day for consistent comparison
 
       return dueDate < today; // Overdue if due date is in the past
     }).map(record => {
       const dueDate = record.dueDate ? new Date(record.dueDate) : new Date(record.monthYear);
+      dueDate.setHours(0, 0, 0, 0); // Ensure consistency for daysOverdue calculation
       const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
       const amountRemaining = (record.amount || 0) - (record.amountReceived || 0);
       return { ...record, daysOverdue: daysOverdue > 0 ? daysOverdue : 0, amountRemaining };
     }).sort((a, b) => b.daysOverdue - a.daysOverdue);
-  }, [rentRecords]);
+  }, [rentRecords, properties]); // Added properties to dependencies for unit.moveInDate access
 
   const openEditRentPaymentModal = (record) => {
     setCurrentRentRecordToEdit(record);
@@ -2143,7 +2215,7 @@ const MonthlyRentTracker = () => {
                       type="checkbox"
                       className="form-checkbox h-4 w-4 text-blue-600 rounded"
                       checked={selectedArrearsRecords.length === arrearsRecords.length && arrearsRecords.length > 0}
-                      onChange={handleSelectAllArrearsRecords}
+                      onChange={() => handleSelectAllArrearsRecords()}
                     />
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
