@@ -34,7 +34,7 @@ import {
 // Context for Firebase and User
 const AppContext = createContext(null);
 
-// Utility function to format date
+// Utility function to format date for display
 const formatDate = (dateString) => {
   if (!dateString) return '-';
   const date = new Date(dateString);
@@ -42,9 +42,19 @@ const formatDate = (dateString) => {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 };
 
+// Utility function to format date for HTML date input (YYYY-MM-DD)
+const formatDateForInput = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD
+};
+
 // Utility function to format currency
 const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'INR' }).format(amount);
+  // Ensure amount is a number, default to 0 if not
+  const numericAmount = typeof amount === 'number' ? amount : parseFloat(amount) || 0;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'INR' }).format(numericAmount);
 };
 
 // Reusable Modal Component
@@ -83,10 +93,20 @@ const AuthScreen = () => {
     try {
       if (isRegistering) {
         await createUserWithEmailAndPassword(auth, email, password);
-        alert('Registration successful! You are now logged in.');
+        // Using a custom message box instead of alert()
+        const messageBox = document.createElement('div');
+        messageBox.className = 'fixed top-4 right-4 bg-green-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
+        messageBox.textContent = 'Registration successful! You are now logged in.';
+        document.body.appendChild(messageBox);
+        setTimeout(() => messageBox.remove(), 3000);
       } else {
         await signInWithEmailAndPassword(auth, email, password);
-        alert('Login successful!');
+        // Using a custom message box instead of alert()
+        const messageBox = document.createElement('div');
+        messageBox.className = 'fixed top-4 right-4 bg-green-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
+        messageBox.textContent = 'Login successful!';
+        document.body.appendChild(messageBox);
+        setTimeout(() => messageBox.remove(), 3000);
       }
     } catch (e) {
       console.error("Auth Error:", e.message);
@@ -198,8 +218,8 @@ const App = () => {
       const firestore = getFirestore(app);
       const firebaseAuth = getAuth(app);
 
-      setDb(firestore);
-      setAuth(firebaseAuth);
+        setDb(firestore);
+        setAuth(firebaseAuth);
 
       const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
         if (user && !user.isAnonymous) {
@@ -217,17 +237,26 @@ const App = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   const handleLogout = async () => {
     if (auth) {
       try {
         await signOut(auth);
         setUserId(null);
         setActiveTab('dashboard');
-        alert('You have been logged out.');
+        // Using a custom message box instead of alert()
+        const messageBox = document.createElement('div');
+        messageBox.className = 'fixed top-4 right-4 bg-green-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
+        messageBox.textContent = 'You have been logged out.';
+        document.body.appendChild(messageBox);
+        setTimeout(() => messageBox.remove(), 3000);
       } catch (error) {
         console.error("Error logging out:", error);
-        alert('Failed to log out: ' + error.message);
+        // Using a custom message box instead of alert()
+        const messageBox = document.createElement('div');
+        messageBox.className = 'fixed top-4 right-4 bg-red-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
+        messageBox.textContent = 'Failed to log out: ' + error.message;
+        document.body.appendChild(messageBox);
+        setTimeout(() => messageBox.remove(), 3000);
       }
     }
   };
@@ -240,16 +269,17 @@ const App = () => {
     );
   }
 
+  // If user is not logged in (or is anonymous), show AuthScreen
   if (!userId || (auth.currentUser && auth.currentUser.isAnonymous)) {
     return (
-      <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id }}>
+      <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency }}>
         <AuthScreen />
       </AppContext.Provider>
     );
   }
 
   return (
-    <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id }}>
+    <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency }}>
       <div className="min-h-screen bg-gray-50 flex flex-col font-inter">
         {/* Header */}
         <header className="bg-white shadow-md p-4 flex justify-between items-center">
@@ -352,7 +382,7 @@ const App = () => {
 
 // --- Dashboard Component ---
 const Dashboard = () => {
-  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate, formatCurrency } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [rentRecords, setRentRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -401,10 +431,14 @@ const Dashboard = () => {
 
   const filteredRentRecords = useMemo(() => {
     return rentRecords.filter(record => {
-      const recordDate = new Date(record.monthYear);
+      // Use the actual due date for filtering if available, otherwise monthYear
+      const recordDateString = record.dueDate || record.monthYear;
+      if (!recordDateString) return false;
+
+      const recordDate = new Date(recordDateString);
       const start = new Date(startDate);
       const end = new Date(endDate);
-      end.setDate(end.getDate() + 1);
+      end.setDate(end.getDate() + 1); // Include the end date in the range
 
       const matchesDateRange = recordDate >= start && recordDate < end;
       const matchesProperty = selectedPropertyId === 'all' || record.propertyId === selectedPropertyId;
@@ -427,22 +461,23 @@ const Dashboard = () => {
 
   const totalRentCollected = filteredRentRecords
     .filter(record => record.isPaid)
-    .reduce((sum, record) => sum + (record.amount || 0), 0);
+    .reduce((sum, record) => sum + (record.amountReceived || record.amount || 0), 0); // Use amountReceived if available
 
   const totalUnpaidRent = filteredRentRecords
     .filter(record => !record.isPaid)
-    .reduce((sum, record) => sum + (record.amount || 0), 0);
+    .reduce((sum, record) => sum + (record.amount || 0) - (record.amountReceived || 0), 0); // Calculate remaining due for unpaid
 
   const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
 
   const netIncome = totalRentCollected - totalExpenses;
 
-  const hasUnpaidRentAlert = filteredRentRecords.some(record => !record.isPaid);
+  const hasUnpaidRentAlert = filteredRentRecords.some(record => !record.isPaid && ((record.amount || 0) - (record.amountReceived || 0) > 0));
 
   const historicalNetIncome = useMemo(() => {
     const monthlyData = {};
     const today = new Date();
 
+    // Initialize data for last 12 months
     for (let i = 0; i < 12; i++) {
       const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const monthYearKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -450,10 +485,10 @@ const Dashboard = () => {
     }
 
     rentRecords.forEach(record => {
-      const recordMonthYear = record.monthYear;
+      const recordMonthYear = record.monthYear; // This is YYYY-MM
       if (monthlyData[recordMonthYear]) {
         if (record.isPaid) {
-          monthlyData[recordMonthYear].rent += (record.amount || 0);
+          monthlyData[recordMonthYear].rent += (record.amountReceived || record.amount || 0); // Use amountReceived
         }
       }
     });
@@ -471,9 +506,9 @@ const Dashboard = () => {
     });
 
     return Object.keys(monthlyData)
-      .sort()
-      .map(key => monthlyData[key]);
-
+      .sort() // Sort by monthYearKey to ensure correct order
+      .map(key => monthlyData[key])
+      .filter(item => item !== undefined && item !== null); // Ensure no undefined or null items
   }, [rentRecords, expenses]);
 
   const profitLossByProperty = useMemo(() => {
@@ -484,7 +519,7 @@ const Dashboard = () => {
 
     filteredRentRecords.filter(r => r.isPaid).forEach(record => {
       if (pnl[record.propertyId]) {
-        pnl[record.propertyId].income += (record.amount || 0);
+        pnl[record.propertyId].income += (record.amountReceived || record.amount || 0); // Use amountReceived
       }
     });
 
@@ -644,18 +679,18 @@ const Dashboard = () => {
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-semibold text-gray-800 mb-4">Monthly Net Income (Last 12 Months)</h3>
         <div className="relative h-64 w-full">
-          {historicalNetIncome.length > 0 ? (
+          {historicalNetIncome.length > 0 && historicalNetIncome.some(d => Math.abs(d.net || 0) > 0) ? (
             <div className="flex h-full items-end justify-around border-b border-l border-gray-300 pt-4">
               {historicalNetIncome.map((data, index) => (
                 <div
                   key={data.label}
                   className="flex flex-col items-center justify-end h-full mx-1"
-                  style={{ width: `${100 / historicalNetIncome.length - 2}%` }}
+                  style={{ width: `${100 / historicalNetIncome.length - 2}%`, height: `${Math.max(0, Math.abs(data.net || 0) / Math.max(...historicalNetIncome.map(d => Math.abs(d.net || 0)), 1) * 90)}%` }}
+                  title={`${data.label}: ${formatCurrency(data.net)}`}
                 >
                   <div
                     className={`w-full rounded-t-md ${data.net >= 0 ? 'bg-blue-500' : 'bg-red-500'}`}
-                    style={{ height: `${Math.max(0, Math.abs(data.net) / Math.max(...historicalNetIncome.map(d => Math.abs(d.net || 0)), 1) * 90)}%` }}
-                    title={`${data.label}: ${formatCurrency(data.net)}`}
+                    style={{ height: '100%' }} // Bar height is controlled by parent div's height
                   ></div>
                   <span className="text-xs text-gray-600 mt-1">{data.label}</span>
                 </div>
@@ -716,12 +751,12 @@ const Dashboard = () => {
               <div
                 key={category}
                 className="flex flex-col items-center justify-end h-full mx-1"
-                style={{ width: `${100 / expenseBreakdownByCategory.length - 2}%` }}
+                style={{ width: `${100 / expenseBreakdownByCategory.length - 2}%`, height: `${Math.max(0, amount / Math.max(...expenseBreakdownByCategory.map(([, a]) => a), 1) * 90)}%` }}
+                title={`${category}: ${formatCurrency(amount)}`}
               >
                 <div
                   className="w-full rounded-t-md bg-orange-500"
-                  style={{ height: `${Math.max(0, amount / Math.max(...expenseBreakdownByCategory.map(([, a]) => a), 1) * 90)}%` }}
-                  title={`${category}: ${formatCurrency(amount)}`}
+                  style={{ height: '100%' }} // Bar height is controlled by parent div's height
                 ></div>
                 <span className="text-xs text-gray-600 mt-1 text-center">{category}</span>
               </div>
@@ -739,7 +774,8 @@ const Dashboard = () => {
 
 // --- Property & Unit Manager Component ---
 const PropertyManager = () => {
-  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
+  // Destructure formatDate and formatDateForInput from AppContext
+  const { db, userId, isAuthReady, __app_id, formatDate, formatDateForInput } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [newPropertyName, setNewPropertyName] = useState('');
   const [newPropertyNotes, setNewPropertyNotes] = useState('');
@@ -752,7 +788,6 @@ const PropertyManager = () => {
   const [newRentAmount, setNewRentAmount] = useState('');
   const [newMoveInDate, setNewMoveInDate] = useState('');
   const [newUnitNotes, setNewUnitNotes] = useState('');
-  // Removed newUnitImageUrl
   const [newPhoneNumber, setNewPhoneNumber] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newEmergencyContactName, setNewEmergencyContactName] = useState('');
@@ -761,6 +796,10 @@ const PropertyManager = () => {
   const [newLeaseEndDate, setNewLeaseEndDate] = useState('');
   const [newSecurityDepositAmount, setNewSecurityDepositAmount] = useState('');
   const [newLeaseTerm, setNewLeaseTerm] = useState('');
+  // New fields for rent increment amount and effective date
+  const [newRentIncrementAmount, setNewRentIncrementAmount] = useState('');
+  const [newRentIncrementEffectiveDate, setNewRentIncrementEffectiveDate] = useState('');
+
 
   const [editingUnit, setEditingUnit] = useState(null);
 
@@ -863,7 +902,6 @@ const PropertyManager = () => {
         rentAmount: parseFloat(newRentAmount),
         moveInDate: newMoveInDate,
         notes: newUnitNotes,
-        // Removed imageUrl from unitData
         phoneNumber: newPhoneNumber,
         email: newEmail,
         emergencyContactName: newEmergencyContactName,
@@ -872,6 +910,9 @@ const PropertyManager = () => {
         leaseEndDate: newLeaseEndDate,
         securityDepositAmount: parseFloat(newSecurityDepositAmount || 0),
         leaseTerm: newLeaseTerm,
+        // New fields for rent increment
+        rentIncrementAmount: parseFloat(newRentIncrementAmount || 0),
+        rentIncrementEffectiveDate: newRentIncrementEffectiveDate || null,
       };
 
       if (editingUnit) {
@@ -899,6 +940,8 @@ const PropertyManager = () => {
       setNewLeaseEndDate('');
       setNewSecurityDepositAmount('');
       setNewLeaseTerm('');
+      setNewRentIncrementAmount('');
+      setNewRentIncrementEffectiveDate('');
       setEditingUnit(null);
       setShowUnitModal(false);
     } catch (e) {
@@ -923,6 +966,8 @@ const PropertyManager = () => {
     setNewLeaseEndDate('');
     setNewSecurityDepositAmount('');
     setNewLeaseTerm('');
+    setNewRentIncrementAmount('');
+    setNewRentIncrementEffectiveDate('');
     setFeedbackMessage('');
     setShowUnitModal(true);
   };
@@ -933,16 +978,19 @@ const PropertyManager = () => {
     setNewUnitNumber(unit.number);
     setNewTenantName(unit.tenantName);
     setNewRentAmount(unit.rentAmount);
-    setNewMoveInDate(unit.moveInDate);
+    // Use formatDateForInput for all date fields when editing
+    setNewMoveInDate(formatDateForInput(unit.moveInDate));
     setNewUnitNotes(unit.notes || '');
     setNewPhoneNumber(unit.phoneNumber || '');
     setNewEmail(unit.email || '');
     setNewEmergencyContactName(unit.emergencyContactName || '');
     setNewEmergencyContactPhone(unit.emergencyContactPhone || '');
-    setNewLeaseStartDate(unit.leaseStartDate || '');
-    setNewLeaseEndDate(unit.leaseEndDate || '');
+    setNewLeaseStartDate(formatDateForInput(unit.leaseStartDate));
+    setNewLeaseEndDate(formatDateForInput(unit.leaseEndDate));
     setNewSecurityDepositAmount(unit.securityDepositAmount || '');
     setNewLeaseTerm(unit.leaseTerm || '');
+    setNewRentIncrementAmount(unit.rentIncrementAmount || '');
+    setNewRentIncrementEffectiveDate(formatDateForInput(unit.rentIncrementEffectiveDate));
     setFeedbackMessage('');
     setShowUnitModal(true);
   };
@@ -966,10 +1014,10 @@ const PropertyManager = () => {
       }
       setConfirmDeleteModal(null);
     } catch (e) {
-      console.error("Error deleting: ", e);
-      setFeedbackMessage(`Error: ${e.message}`);
-    }
-  };
+            console.error("Error deleting: ", e);
+            setFeedbackMessage(`Error: ${e.message}`);
+        }
+    };
 
   const openConfirmDeleteModal = (type, id, nameOrNumber, propertyId = null) => {
     setConfirmDeleteModal({ type, id, nameOrNumber, propertyId });
@@ -1177,7 +1225,7 @@ const PropertyManager = () => {
         </div>
       </Modal>
 
-      {/* Unit Modal (Add/Edit) - Removed Unit Image URL */}
+      {/* Unit Modal (Add/Edit) */}
       <Modal isOpen={showUnitModal} title={editingUnit ? `Edit Unit for ${selectedPropertyForUnit?.name}` : `Add New Unit to ${selectedPropertyForUnit?.name}`} onClose={() => setShowUnitModal(false)} maxWidth="max-w-2xl">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
           <div>
@@ -1225,7 +1273,6 @@ const PropertyManager = () => {
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-          {/* Removed Unit Image URL (Optional) section */}
 
           {/* Tenant Contact Information */}
           <div className="col-span-full border-t border-gray-200 pt-4 mt-4">
@@ -1322,6 +1369,36 @@ const PropertyManager = () => {
             />
           </div>
 
+          {/* Rent Increment Details */}
+          <div className="col-span-full border-t border-gray-200 pt-4 mt-4">
+            <h4 className="text-lg font-semibold text-gray-800 mb-2">Rent Increment (Optional)</h4>
+          </div>
+          <div>
+            <label htmlFor="rentIncrementAmount" className="block text-sm font-medium text-gray-700">Increment Amount</label>
+            <input
+              type="number"
+              id="rentIncrementAmount"
+              value={newRentIncrementAmount}
+              onChange={(e) => setNewRentIncrementAmount(e.target.value)}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              placeholder="e.g., 50.00"
+              min="0"
+              step="0.01"
+            />
+            <p className="mt-1 text-xs text-gray-500">Amount to increase rent by.</p>
+          </div>
+          <div>
+            <label htmlFor="rentIncrementEffectiveDate" className="block text-sm font-medium text-gray-700">Increment Effective Date</label>
+            <input
+              type="date"
+              id="rentIncrementEffectiveDate"
+              value={newRentIncrementEffectiveDate}
+              onChange={(e) => setNewRentIncrementEffectiveDate(e.target.value)}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">Date from which this increment applies.</p>
+          </div>
+
           <div className="col-span-full">
             <label htmlFor="unitNotes" className="block text-sm font-medium text-gray-700">Notes (Optional)</label>
             <textarea
@@ -1388,9 +1465,12 @@ const PropertyManager = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month Due</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Due</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Paid</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason for Difference</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1400,11 +1480,14 @@ const PropertyManager = () => {
                         {new Date(record.monthYear).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(record.amount)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(record.amountReceived)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(record.paymentDate)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${record.isPaid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                           {record.isPaid ? 'Paid' : 'Unpaid'}
                         </span>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.partialReason || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1419,7 +1502,7 @@ const PropertyManager = () => {
 
 // --- Monthly Rent Tracker Component ---
 const MonthlyRentTracker = () => {
-  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate, formatCurrency } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [rentRecords, setRentRecords] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -1428,6 +1511,19 @@ const MonthlyRentTracker = () => {
   const [selectedRentRecords, setSelectedRentRecords] = useState([]);
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [confirmDeleteRentModal, setConfirmDeleteRentModal] = useState(null);
+
+  // State for Edit Rent Payment Modal
+  const [showEditRentPaymentModal, setShowEditRentPaymentModal] = useState(false);
+  const [currentRentRecordToEdit, setCurrentRentRecordToEdit] = useState(null);
+  const [editPaymentDate, setEditPaymentDate] = useState('');
+  const [editIsFullPayment, setEditIsFullPayment] = useState(true);
+  const [editAmountReceived, setEditAmountReceived] = useState('');
+  const [editPartialReason, setEditPartialReason] = useState('');
+
+  // State for bulk delete in arrears
+  const [selectedArrearsRecords, setSelectedArrearsRecords] = useState([]);
+  const [confirmBulkDeleteArrearsModal, setConfirmBulkDeleteArrearsModal] = useState(false);
+
 
   useEffect(() => {
     if (!db || !userId || !isAuthReady || !__app_id) return;
@@ -1457,39 +1553,115 @@ const MonthlyRentTracker = () => {
     };
   }, [db, userId, isAuthReady, __app_id]);
 
+  // Logic to auto-generate rent records and apply rent increments
   useEffect(() => {
     if (!db || !userId || !isAuthReady || properties.length === 0 || !__app_id) return;
 
-    const currentMonth = new Date().getMonth() + 1;
-    const currentYear = new Date().getFullYear();
-    const currentMonthYearString = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    const generateAndIncrementRecords = async () => {
+      const today = new Date();
+      const currentMonth = today.getMonth() + 1;
+      const currentYear = today.getFullYear();
 
-    const generateRecords = async () => {
       for (const property of properties) {
         for (const unit of property.units) {
           const moveInDate = new Date(unit.moveInDate);
-          if (moveInDate.getFullYear() < currentYear || (moveInDate.getFullYear() === currentYear && moveInDate.getMonth() + 1 <= currentMonth)) {
-            const existingRecord = rentRecords.find(
-              r => r.unitId === unit.id && r.monthYear === currentMonthYearString
-            );
+          if (isNaN(moveInDate.getTime())) {
+            console.warn(`Invalid moveInDate for unit ${unit.id}: ${unit.moveInDate}`);
+            continue;
+          }
 
-            if (!existingRecord) {
-              console.log(`Generating rent record for ${unit.number} (${unit.tenantName}) for ${currentMonthYearString}`);
-              try {
-                await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), {
-                  propertyId: property.id,
-                  propertyName: property.name,
-                  unitId: unit.id,
-                  unitNumber: unit.number,
-                  tenantName: unit.tenantName,
-                  amount: unit.rentAmount,
-                  monthYear: currentMonthYearString,
-                  isPaid: false,
-                  dueDate: `${currentMonthYearString}-01`,
-                  createdAt: new Date().toISOString(),
-                });
-              } catch (e) {
-                console.error("Error auto-generating rent record: ", e);
+          // Determine the rent due day from move-in date
+          const rentDueDay = moveInDate.getDate();
+
+          // Iterate for past months up to current month to ensure all records are generated
+          // Start from the month after move-in or the current year's January, whichever is later
+          const startMonth = Math.max(1, moveInDate.getMonth() + 1);
+          const startYear = moveInDate.getFullYear();
+
+          for (let year = startYear; year <= currentYear; year++) {
+            let monthToStart = (year === startYear) ? startMonth : 1;
+            let monthToEnd = (year === currentYear) ? currentMonth : 12;
+
+            for (let month = monthToStart; month <= monthToEnd; month++) {
+              const targetDate = new Date(year, month - 1, rentDueDay); // Use rentDueDay
+              const targetMonthYearString = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+
+              // Only generate if the target month/year is not in the future
+              if (targetDate > today) continue;
+
+              // Check if rent record for this unit and target month already exists
+              const existingRecord = rentRecords.find(
+                r => r.unitId === unit.id && r.monthYear === targetMonthYearString
+              );
+
+              if (!existingRecord) {
+                let currentUnitRent = parseFloat(unit.rentAmount || 0);
+                const rentIncrementAmount = parseFloat(unit.rentIncrementAmount || 0);
+                const rentIncrementEffectiveDate = unit.rentIncrementEffectiveDate ? new Date(unit.rentIncrementEffectiveDate) : null;
+
+                // Apply rent increment if applicable for this period
+                if (rentIncrementAmount > 0 && rentIncrementEffectiveDate && targetDate >= rentIncrementEffectiveDate) {
+                  // Check if the increment should be applied for this specific rent record's month
+                  const incrementAppliedForThisRecord = (
+                    rentIncrementEffectiveDate.getFullYear() < year ||
+                    (rentIncrementEffectiveDate.getFullYear() === year && rentIncrementEffectiveDate.getMonth() + 1 <= month)
+                  );
+
+                  // To avoid applying increment repeatedly for past months,
+                  // we only apply it if the unit's stored rentAmount is the base rent
+                  // and the increment effective date is met in the current generation cycle.
+                  // A more robust way would be to calculate rent based on a rent history.
+                  // For simplicity, we'll apply it once the effective date is reached for the first time.
+                  // We need to fetch the latest unit data to ensure we're not using stale rentAmount.
+                  const latestUnitDoc = await getDocs(query(collection(db, `artifacts/${__app_id}/users/${userId}/properties/${property.id}/units`), where('id', '==', unit.id)));
+                  const latestUnitData = latestUnitDoc.docs[0]?.data();
+                  if (latestUnitData) {
+                    currentUnitRent = parseFloat(latestUnitData.rentAmount || 0);
+                    // If the increment effective date is met AND the current rent amount in Firestore
+                    // does not yet reflect this specific increment amount, then apply it.
+                    // This relies on the assumption that `rentIncrementAmount` is a one-time addition.
+                    if (incrementAppliedForThisRecord &&
+                        (currentUnitRent < (parseFloat(unit.rentAmount) + rentIncrementAmount))) { // Check if original rent + increment is greater than current
+                        currentUnitRent = parseFloat(unit.rentAmount) + rentIncrementAmount;
+                        // Update the unit's base rent in Firestore to reflect the increment
+                        const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${property.id}/units`, unit.id);
+                        await updateDoc(unitDocRef, {
+                            rentAmount: currentUnitRent,
+                            // Optionally, clear or update rentIncrementAmount/EffectiveDate if it's a one-time application
+                            // For annual, you'd keep it and just update rentAmount.
+                        });
+                        console.log(`Applied rent increment for unit ${unit.number}. New rent: ${currentUnitRent}`);
+                    }
+                  }
+                }
+
+                // Calculate the exact due date for the current month's rent
+                // Handle cases where moveInDate day is > days in target month (e.g., Feb 30th)
+                const lastDayOfTargetMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+                const finalRentDueDay = Math.min(rentDueDay, lastDayOfTargetMonth);
+                const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
+
+                console.log(`Generating rent record for ${unit.number} (${unit.tenantName}) for ${targetMonthYearString}, Due: ${rentDueDate}`);
+                try {
+                  await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), {
+                    propertyId: property.id,
+                    propertyName: property.name,
+                    unitId: unit.id,
+                    unitNumber: unit.number,
+                    tenantName: unit.tenantName,
+                    amount: currentUnitRent, // Use the potentially incremented rent
+                    monthYear: targetMonthYearString,
+                    isPaid: false,
+                    dueDate: rentDueDate, // Store the specific due date
+                    paymentDate: null, // New field
+                    amountReceived: 0, // New field
+                    isPartialPayment: false, // New field
+                    partialReason: '', // New field
+                    createdAt: new Date().toISOString(),
+                  });
+                } catch (e) {
+                  console.error("Error auto-generating rent record: ", e);
+                }
               }
             }
           }
@@ -1497,11 +1669,11 @@ const MonthlyRentTracker = () => {
       }
     };
 
-    if (properties.length > 0 && rentRecords.length >= 0) {
-        generateRecords();
+    if (properties.length > 0) {
+        generateAndIncrementRecords();
     }
 
-  }, [db, userId, isAuthReady, properties, rentRecords, __app_id]);
+  }, [db, userId, isAuthReady, properties, rentRecords, __app_id]); // Added rentRecords to dependencies to re-run when new records appear
 
   const filteredRentRecords = useMemo(() => {
     return rentRecords.filter(record => {
@@ -1511,37 +1683,119 @@ const MonthlyRentTracker = () => {
       const matchesYear = recordYear === selectedYear;
       const matchesProperty = selectedPropertyId === 'all' || record.propertyId === selectedPropertyId;
       return matchesMonth && matchesYear && matchesProperty;
-    }).sort((a, b) => a.unitNumber.localeCompare(b.unitNumber));
+    }).sort((a, b) => {
+      // Sort by unit number, then by tenant name
+      const unitComparison = a.unitNumber.localeCompare(b.unitNumber);
+      if (unitComparison !== 0) return unitComparison;
+      return a.tenantName.localeCompare(b.tenantName);
+    });
   }, [rentRecords, selectedMonth, selectedYear, selectedPropertyId]);
 
   const arrearsRecords = useMemo(() => {
     const today = new Date();
-    const currentMonthYear = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
     return rentRecords.filter(record => {
-      if (record.isPaid) return false;
-      const recordDate = new Date(record.monthYear);
-      const dueDate = new Date(record.dueDate || record.monthYear);
-      dueDate.setDate(dueDate.getDate() + 1);
+      // A record is in arrears if:
+      // 1. It's not fully paid (amount due > amount received)
+      // 2. The due date has passed
+      const amountRemaining = (record.amount || 0) - (record.amountReceived || 0);
+      if (amountRemaining <= 0) return false; // Fully paid or overpaid
 
-      return recordDate < new Date(currentMonthYear) || (record.monthYear === currentMonthYear && dueDate < today);
+      const dueDate = record.dueDate ? new Date(record.dueDate) : new Date(record.monthYear);
+      dueDate.setHours(23, 59, 59, 999); // Set to end of day for accurate overdue check
+
+      return dueDate < today; // Overdue if due date is in the past
     }).map(record => {
-      const dueDate = new Date(record.dueDate || record.monthYear);
+      const dueDate = record.dueDate ? new Date(record.dueDate) : new Date(record.monthYear);
       const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
-      return { ...record, daysOverdue: daysOverdue > 0 ? daysOverdue : 0 };
+      const amountRemaining = (record.amount || 0) - (record.amountReceived || 0);
+      return { ...record, daysOverdue: daysOverdue > 0 ? daysOverdue : 0, amountRemaining };
     }).sort((a, b) => b.daysOverdue - a.daysOverdue);
   }, [rentRecords]);
 
-  const toggleRentPaidStatus = async (recordId, currentStatus) => {
-    if (!db || !userId || !isAuthReady || !__app_id) return;
+  const openEditRentPaymentModal = (record) => {
+    setCurrentRentRecordToEdit(record);
+    setEditPaymentDate(record.paymentDate || new Date().toISOString().slice(0, 10));
+    setEditAmountReceived(record.amountReceived || record.amount || '');
+    setEditIsFullPayment((record.amountReceived || 0) >= (record.amount || 0)); // Determine full payment based on amounts
+    setEditPartialReason(record.partialReason || '');
+    setFeedbackMessage('');
+    setShowEditRentPaymentModal(true);
+  };
+
+  const handleUpdateRentPayment = async () => {
+    if (!db || !userId || !isAuthReady || !__app_id || !currentRentRecordToEdit) return;
+
+    const expectedAmount = currentRentRecordToEdit.amount;
+    let finalAmountReceived = parseFloat(editAmountReceived);
+    let finalIsPaid = false; // Default to false
+    let finalPartialReason = editPartialReason.trim();
+
+    if (isNaN(finalAmountReceived)) {
+      setFeedbackMessage("Error: Amount Received must be a valid number.");
+      return;
+    }
+
+    // Determine if it's a full payment
+    if (finalAmountReceived >= expectedAmount) {
+      finalIsPaid = true;
+      finalPartialReason = ''; // Clear reason if full payment
+      finalAmountReceived = expectedAmount; // Cap at expected amount for full payment
+    } else {
+      // It's a partial payment
+      finalIsPaid = false;
+      if (!finalPartialReason) {
+        setFeedbackMessage("Error: Reason for difference is required for partial payments.");
+        return;
+      }
+
+      // If the reason is 'Maintenance', consider it fully paid for rent tracking
+      // and log the difference as an expense.
+      if (finalPartialReason.toLowerCase() === 'maintenance') {
+        finalIsPaid = true; // Mark rent as paid
+        const maintenanceAmount = expectedAmount - finalAmountReceived;
+        finalAmountReceived = expectedAmount; // Treat as if full amount received for rent record
+        finalPartialReason = 'Maintenance deduction'; // Standardize reason
+
+        // Add to expense tracker under "Maintenance"
+        try {
+          await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/expenses`), {
+            date: editPaymentDate,
+            propertyId: currentRentRecordToEdit.propertyId,
+            propertyName: currentRentRecordToEdit.propertyName,
+            unitId: currentRentRecordToEdit.unitId, // Ensure unitId is captured for expenses
+            unitNumber: currentRentRecordToEdit.unitNumber, // Ensure unitNumber is captured for expenses
+            amount: maintenanceAmount,
+            reason: `Maintenance deduction from rent for Unit ${currentRentRecordToEdit.unitNumber}`,
+            category: 'Maintenance', // This is correct
+            notes: `Original rent: ${formatCurrency(expectedAmount)}, Received: ${formatCurrency(editAmountReceived)}. Maintenance cost: ${formatCurrency(maintenanceAmount)}`,
+            createdAt: new Date().toISOString(),
+          });
+          setFeedbackMessage("Rent record updated and Maintenance expense added!");
+        } catch (e) {
+          console.error("Error adding maintenance expense:", e);
+          setFeedbackMessage(`Error updating rent and adding expense: ${e.message}`);
+          return; // Stop if expense logging fails
+        }
+      }
+    }
+
+
     setFeedbackMessage('');
     try {
-      const recordDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, recordId);
-      await updateDoc(recordDocRef, { isPaid: !currentStatus });
-      setFeedbackMessage(`Rent record status toggled to ${!currentStatus ? 'Paid' : 'Unpaid'}.`);
-      setSelectedRentRecords(prev => prev.filter(id => id !== recordId));
+      const recordDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, currentRentRecordToEdit.id);
+      await updateDoc(recordDocRef, {
+        isPaid: finalIsPaid,
+        paymentDate: editPaymentDate,
+        amountReceived: finalAmountReceived,
+        isPartialPayment: !finalIsPaid, // True if not full payment
+        partialReason: finalPartialReason,
+      });
+      setFeedbackMessage("Rent record updated successfully!");
+      setShowEditRentPaymentModal(false);
+      setCurrentRentRecordToEdit(null);
     } catch (e) {
-      console.error("Error toggling rent paid status:", e);
+      console.error("Error updating rent payment:", e);
       setFeedbackMessage(`Error: ${e.message}`);
     }
   };
@@ -1587,8 +1841,18 @@ const MonthlyRentTracker = () => {
     setFeedbackMessage('');
     try {
       const updatePromises = selectedRentRecords.map(recordId => {
+        const recordToUpdate = filteredRentRecords.find(r => r.id === recordId);
         const recordDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, recordId);
-        return updateDoc(recordDocRef, { isPaid: isPaidStatus });
+        const amount = recordToUpdate?.amount || 0;
+        const paymentDate = new Date().toISOString().slice(0, 10); // Current date for bulk update
+
+        return updateDoc(recordDocRef, {
+          isPaid: isPaidStatus,
+          paymentDate: isPaidStatus ? paymentDate : null,
+          amountReceived: isPaidStatus ? amount : 0,
+          isPartialPayment: false,
+          partialReason: '',
+        });
       });
       await Promise.all(updatePromises);
       setFeedbackMessage(`Bulk update successful: marked ${selectedRentRecords.length} records as ${isPaidStatus ? 'Paid' : 'Unpaid'}.`);
@@ -1598,6 +1862,43 @@ const MonthlyRentTracker = () => {
       setFeedbackMessage(`Error: ${e.message}`);
     }
   };
+
+  // Arrears Bulk Delete Logic
+  const handleSelectArrearsRecord = (recordId) => {
+    setSelectedArrearsRecords(prev =>
+      prev.includes(recordId) ? prev.filter(id => id !== recordId) : [...prev, recordId]
+    );
+  };
+
+  const handleSelectAllArrearsRecords = () => {
+    if (selectedArrearsRecords.length === arrearsRecords.length) {
+      setSelectedArrearsRecords([]);
+    } else {
+      setSelectedArrearsRecords(arrearsRecords.map(record => record.id));
+    }
+  };
+
+  const handleBulkDeleteArrearsRecords = async () => {
+    if (!db || !userId || !isAuthReady || !__app_id || selectedArrearsRecords.length === 0) {
+      setFeedbackMessage("No arrears records selected for bulk deletion.");
+      return;
+    }
+    setFeedbackMessage('');
+    try {
+      const deletePromises = selectedArrearsRecords.map(recordId => {
+        const recordDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, recordId);
+        return deleteDoc(recordDocRef);
+      });
+      await Promise.all(deletePromises);
+      setFeedbackMessage(`Successfully deleted ${selectedArrearsRecords.length} arrears records.`);
+      setSelectedArrearsRecords([]);
+      setConfirmBulkDeleteArrearsModal(false);
+    } catch (e) {
+      console.error("Error performing bulk delete on arrears:", e);
+      setFeedbackMessage(`Error: ${e.message}`);
+    }
+  };
+
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
@@ -1704,7 +2005,10 @@ const MonthlyRentTracker = () => {
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit #</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tenant Name</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Due</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Paid</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason for Difference</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -1723,19 +2027,21 @@ const MonthlyRentTracker = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.unitNumber}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.tenantName}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(record.amount)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(record.amountReceived)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(record.paymentDate)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${record.isPaid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                       {record.isPaid ? 'Paid' : 'Unpaid'}
                     </span>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.partialReason || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => toggleRentPaidStatus(record.id, record.isPaid)}
-                        className={`px-3 py-1 rounded-md text-white text-xs font-semibold flex items-center transition-colors duration-200 ${record.isPaid ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}
+                        onClick={() => openEditRentPaymentModal(record)}
+                        className="px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center transition-colors duration-200"
                       >
-                        {record.isPaid ? <XCircle size={14} className="mr-1" /> : <CheckCircle size={14} className="mr-1" />}
-                        {record.isPaid ? 'Mark Unpaid' : 'Mark Paid'}
+                        <Edit size={14} className="mr-1" /> Edit Payment
                       </button>
                       <button
                         onClick={() => openConfirmDeleteRentModal(record.id, record.propertyName, record.unitNumber, record.monthYear)}
@@ -1756,18 +2062,41 @@ const MonthlyRentTracker = () => {
       {/* Arrears Report */}
       <div className="bg-white p-6 rounded-lg shadow-md mt-8">
         <h3 className="text-xl font-semibold text-gray-800 mb-4">Unpaid & Overdue Rent (Arrears)</h3>
+        {arrearsRecords.length > 0 && (
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={() => setConfirmBulkDeleteArrearsModal(true)}
+              disabled={selectedArrearsRecords.length === 0}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 size={20} className="mr-2" /> Bulk Delete Selected ({selectedArrearsRecords.length})
+            </button>
+          </div>
+        )}
         {arrearsRecords.length === 0 ? (
-          <p className="text-gray-600 text-center py-4">No unpaid or overdue rent records found.</p>
+          <div className="bg-white p-6 rounded-lg shadow-md text-center text-gray-600">
+            No unpaid or overdue rent records found.
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                      checked={selectedArrearsRecords.length === arrearsRecords.length && arrearsRecords.length > 0}
+                      onChange={handleSelectAllArrearsRecords}
+                    />
+                  </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit #</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tenant Name</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month Due</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Due</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Paid</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Remaining</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days Overdue</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -1775,6 +2104,14 @@ const MonthlyRentTracker = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {arrearsRecords.map(record => (
                   <tr key={record.id} className="bg-red-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <input
+                        type="checkbox"
+                        className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                        checked={selectedArrearsRecords.includes(record.id)}
+                        onChange={() => handleSelectArrearsRecord(record.id)}
+                      />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.propertyName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.unitNumber}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.tenantName}</td>
@@ -1782,16 +2119,18 @@ const MonthlyRentTracker = () => {
                       {new Date(record.monthYear).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(record.amount)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(record.amountReceived)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 font-semibold">{formatCurrency(record.amountRemaining)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 font-semibold">
                       {record.daysOverdue} {record.daysOverdue === 1 ? 'day' : 'days'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => toggleRentPaidStatus(record.id, record.isPaid)}
+                          onClick={() => openEditRentPaymentModal(record)}
                           className="px-3 py-1 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-semibold flex items-center transition-colors duration-200"
                         >
-                          <CheckCircle size={14} className="mr-1" /> Mark Paid
+                          <CheckCircle size={14} className="mr-1" /> Update Payment
                         </button>
                         <button
                           onClick={() => openConfirmDeleteRentModal(record.id, record.propertyName, record.unitNumber, record.monthYear)}
@@ -1808,7 +2147,112 @@ const MonthlyRentTracker = () => {
             </table>
           </div>
         )}
-      </div> {/* This is the missing closing div tag */}
+      </div>
+
+      {/* Edit Rent Payment Modal */}
+      <Modal isOpen={showEditRentPaymentModal} title="Edit Rent Payment" onClose={() => setShowEditRentPaymentModal(false)}>
+        {currentRentRecordToEdit && (
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              Editing payment for: <span className="font-semibold">{currentRentRecordToEdit.propertyName} - Unit {currentRentRecordToEdit.unitNumber} ({new Date(currentRentRecordToEdit.monthYear).toLocaleString('en-US', { month: 'long', year: 'numeric' })})</span>
+            </p>
+            <p className="text-gray-700">
+              Amount Due: <span className="font-semibold">{formatCurrency(currentRentRecordToEdit.amount)}</span>
+            </p>
+
+            <div>
+              <label htmlFor="editPaymentDate" className="block text-sm font-medium text-gray-700">Payment Date</label>
+              <input
+                type="date"
+                id="editPaymentDate"
+                value={editPaymentDate}
+                onChange={(e) => setEditPaymentDate(e.target.value)}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="editAmountReceived" className="block text-sm font-medium text-gray-700">Amount Received</label>
+              <input
+                type="number"
+                id="editAmountReceived"
+                value={editAmountReceived}
+                onChange={(e) => {
+                  setEditAmountReceived(e.target.value);
+                  const received = parseFloat(e.target.value);
+                  // Automatically set full payment if received amount is >= expected
+                  setEditIsFullPayment(received >= currentRentRecordToEdit.amount);
+                }}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                step="0.01"
+                min="0"
+              />
+            </div>
+
+            <div className="flex items-center">
+              <input
+                id="editIsFullPayment"
+                name="editIsFullPayment"
+                type="checkbox"
+                checked={editIsFullPayment}
+                onChange={(e) => {
+                    setEditIsFullPayment(e.target.checked);
+                    if (e.target.checked) {
+                        setEditAmountReceived(currentRentRecordToEdit.amount);
+                        setEditPartialReason('');
+                    } else {
+                        // If unchecking full payment, set amount received to current value if already less, else 0
+                        setEditAmountReceived(prev => (parseFloat(prev) < currentRentRecordToEdit.amount ? prev : '0'));
+                    }
+                }}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="editIsFullPayment" className="ml-2 block text-sm text-gray-900">
+                Full Amount Paid
+              </label>
+            </div>
+
+            {!editIsFullPayment && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-red-700">Difference: {formatCurrency(currentRentRecordToEdit.amount - (parseFloat(editAmountReceived) || 0))}</p>
+                <div>
+                  <label htmlFor="editPartialReason" className="block text-sm font-medium text-gray-700">Reason for Difference</label>
+                  <select
+                    id="editPartialReason"
+                    value={editPartialReason}
+                    onChange={(e) => setEditPartialReason(e.target.value)}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                  >
+                    <option value="">Select a reason</option>
+                    <option value="Late Payment">Late Payment</option>
+                    <option value="Partial Payment">Partial Payment</option>
+                    <option value="Maintenance">Maintenance</option>
+                    {/* Add more options as needed */}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select "Maintenance" if the difference is due to maintenance work, it will be logged as an expense.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowEditRentPaymentModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateRentPayment}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
+              >
+                Update Payment
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Confirmation Delete Rent Record Modal */}
       <Modal isOpen={!!confirmDeleteRentModal} title="Confirm Delete Rent Record" onClose={() => setConfirmDeleteRentModal(null)}>
@@ -1833,18 +2277,43 @@ const MonthlyRentTracker = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Confirmation Bulk Delete Arrears Modal */}
+      <Modal isOpen={confirmBulkDeleteArrearsModal} title="Confirm Bulk Delete Arrears" onClose={() => setConfirmBulkDeleteArrearsModal(false)}>
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Are you sure you want to delete <span className="font-semibold">{selectedArrearsRecords.length}</span> selected arrears records? This action cannot be undone.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={() => setConfirmBulkDeleteArrearsModal(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkDeleteArrearsRecords}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200"
+            >
+              Delete Selected
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
 
 // --- Expense Logger Component ---
 const ExpenseLogger = () => {
-  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate, formatCurrency } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [newExpenseDate, setNewExpenseDate] = useState(new Date().toISOString().slice(0, 10));
   const [newExpensePropertyId, setNewExpensePropertyId] = useState('');
+  const [newExpenseUnitId, setNewExpenseUnitId] = useState(''); // New state for unit ID
+  const [newExpenseUnitNumber, setNewExpenseUnitNumber] = useState(''); // New state for unit number
   const [newExpenseAmount, setNewExpenseAmount] = useState('');
   const [newExpenseReason, setNewExpenseReason] = useState('');
   const [newExpenseCategory, setNewExpenseCategory] = useState('');
@@ -1866,8 +2335,16 @@ const ExpenseLogger = () => {
     const userExpensesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/expenses`);
     const userCategoriesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/expenseCategories`);
 
-    const unsubscribeProperties = onSnapshot(userPropertiesCollectionRef, (snapshot) => {
-      setProperties(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const unsubscribeProperties = onSnapshot(userPropertiesCollectionRef, async (snapshot) => {
+      const fetchedProperties = [];
+      for (const doc of snapshot.docs) {
+        const propertyData = { id: doc.id, ...doc.data(), units: [] };
+        const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${doc.id}/units`);
+        const unitSnapshot = await getDocs(unitsCollectionRef);
+        propertyData.units = unitSnapshot.docs.map(unitDoc => ({ id: unitDoc.id, ...unitDoc.data() }));
+        fetchedProperties.push(propertyData);
+      }
+      setProperties(fetchedProperties);
     }, (error) => console.error("Error fetching properties for expense logger:", error));
 
     const unsubscribeExpenses = onSnapshot(userExpensesCollectionRef, (snapshot) => {
@@ -1885,8 +2362,14 @@ const ExpenseLogger = () => {
     };
   }, [db, userId, isAuthReady, __app_id]);
 
+  // Helper to find units for a selected property
+  const getUnitsForProperty = (propertyId) => {
+    const property = properties.find(p => p.id === propertyId);
+    return property ? property.units : [];
+  };
+
   const handleAddEditExpense = async () => {
-    if (!db || !userId || !isAuthReady || !__app_id || !newExpenseDate || !newExpensePropertyId || !newExpenseAmount || !newExpenseReason.trim() || !newExpenseCategory.trim()) {
+    if (!db || !userId || !isAuthReady || !__app_id || !newExpenseDate.trim() || !newExpenseAmount || !newExpenseReason.trim() || !newExpenseCategory || !newExpensePropertyId) {
       setFeedbackMessage("All expense fields (Date, Property, Amount, Reason, Category) are required.");
       return;
     }
@@ -1896,12 +2379,21 @@ const ExpenseLogger = () => {
       setFeedbackMessage("Selected property not found.");
       return;
     }
+
+    // Unit number is now mandatory if a property is selected
+    if (newExpensePropertyId && !newExpenseUnitId) {
+      setFeedbackMessage("Unit Number is required for the selected property.");
+      return;
+    }
+
     setFeedbackMessage('');
     try {
       const expenseData = {
         date: newExpenseDate,
         propertyId: newExpensePropertyId,
         propertyName: selectedProperty.name,
+        unitId: newExpenseUnitId, // Include unitId (now mandatory if property selected)
+        unitNumber: newExpenseUnitNumber, // Include unitNumber (now mandatory if property selected)
         amount: parseFloat(newExpenseAmount),
         reason: newExpenseReason,
         category: newExpenseCategory,
@@ -1922,6 +2414,8 @@ const ExpenseLogger = () => {
       }
       setNewExpenseDate(new Date().toISOString().slice(0, 10));
       setNewExpensePropertyId('');
+      setNewExpenseUnitId('');
+      setNewExpenseUnitNumber('');
       setNewExpenseAmount('');
       setNewExpenseReason('');
       setNewExpenseCategory('');
@@ -1938,6 +2432,8 @@ const ExpenseLogger = () => {
     setEditingExpense(null);
     setNewExpenseDate(new Date().toISOString().slice(0, 10));
     setNewExpensePropertyId(properties.length > 0 ? properties[0].id : '');
+    setNewExpenseUnitId('');
+    setNewExpenseUnitNumber('');
     setNewExpenseAmount('');
     setNewExpenseReason('');
     setNewExpenseCategory('');
@@ -1950,6 +2446,8 @@ const ExpenseLogger = () => {
     setEditingExpense(expense);
     setNewExpenseDate(expense.date);
     setNewExpensePropertyId(expense.propertyId);
+    setNewExpenseUnitId(expense.unitId || ''); // Ensure unitId is set for editing
+    setNewExpenseUnitNumber(expense.unitNumber || ''); // Ensure unitNumber is set for editing
     setNewExpenseAmount(expense.amount);
     setNewExpenseReason(expense.reason);
     setNewExpenseCategory(expense.category || '');
@@ -2073,6 +2571,7 @@ const ExpenseLogger = () => {
               <tr>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit #</th> {/* New column */}
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
@@ -2085,6 +2584,7 @@ const ExpenseLogger = () => {
                 <tr key={expense.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatDate(expense.date)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.propertyName}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.unitNumber || '-'}</td> {/* Display unit number */}
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(expense.amount)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.reason}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.category || 'N/A'}</td>
@@ -2132,8 +2632,13 @@ const ExpenseLogger = () => {
             <select
               id="expenseProperty"
               value={newExpensePropertyId}
-              onChange={(e) => setNewExpensePropertyId(e.target.value)}
+              onChange={(e) => {
+                setNewExpensePropertyId(e.target.value);
+                setNewExpenseUnitId(''); // Reset unit when property changes
+                setNewExpenseUnitNumber('');
+              }}
               className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              required // Make property selection required
             >
               <option value="">Select a Property</option>
               {properties.map(prop => (
@@ -2141,6 +2646,27 @@ const ExpenseLogger = () => {
               ))}
             </select>
           </div>
+          {newExpensePropertyId && (
+            <div>
+              <label htmlFor="expenseUnit" className="block text-sm font-medium text-gray-700">Unit Number</label>
+              <select
+                id="expenseUnit"
+                value={newExpenseUnitId}
+                onChange={(e) => {
+                  const selectedUnit = getUnitsForProperty(newExpensePropertyId).find(unit => unit.id === e.target.value);
+                  setNewExpenseUnitId(e.target.value);
+                  setNewExpenseUnitNumber(selectedUnit ? selectedUnit.number : ''); // Set unit number
+                }}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                required // Make unit selection required if property is selected
+              >
+                <option value="">Select a Unit</option>
+                {getUnitsForProperty(newExpensePropertyId).map(unit => (
+                  <option key={unit.id} value={unit.id}>{unit.number} ({unit.tenantName})</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label htmlFor="expenseAmount" className="block text-sm font-medium text-gray-700">Amount</label>
             <input
@@ -2152,6 +2678,7 @@ const ExpenseLogger = () => {
               placeholder="e.g., 150.00"
               min="0"
               step="0.01"
+              required
             />
           </div>
           <div>
@@ -2163,6 +2690,7 @@ const ExpenseLogger = () => {
               onChange={(e) => setNewExpenseReason(e.target.value)}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               placeholder="e.g., Plumbing Repair"
+              required
             />
           </div>
           <div>
@@ -2172,6 +2700,7 @@ const ExpenseLogger = () => {
               value={newExpenseCategory}
               onChange={(e) => setNewExpenseCategory(e.target.value)}
               className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              required
             >
               <option value="">Select a Category</option>
               {expenseCategories.map(category => (
@@ -2308,7 +2837,7 @@ const ExpenseLogger = () => {
 
 // --- Task Manager Component ---
 const TaskManager = () => {
-  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate } = useContext(AppContext);
   const [tasks, setTasks] = useState([]);
   const [properties, setProperties] = useState([]);
   const [newTaskDescription, setNewTaskDescription] = useState('');
@@ -2879,7 +3408,7 @@ const Reminders = () => {
 
 // --- Export System Component ---
 const ExportSystem = () => {
-  const { db, userId, isAuthReady, __app_id } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [rentRecords, setRentRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -2967,7 +3496,8 @@ const ExportSystem = () => {
       setFeedbackMessage("No rent records to export.");
       return;
     }
-    const headers = ['id', 'propertyId', 'propertyName', 'unitId', 'unitNumber', 'tenantName', 'amount', 'monthYear', 'isPaid', 'dueDate', 'createdAt'];
+    // Updated headers for rent records
+    const headers = ['id', 'propertyId', 'propertyName', 'unitId', 'unitNumber', 'tenantName', 'amount', 'amountReceived', 'monthYear', 'isPaid', 'paymentDate', 'dueDate', 'isPartialPayment', 'partialReason', 'createdAt'];
     const csv = convertToCsv(rentRecords, headers);
     downloadCsv(csv, 'rent_records.csv');
   };
@@ -2977,7 +3507,8 @@ const ExportSystem = () => {
       setFeedbackMessage("No expense records to export.");
       return;
     }
-    const headers = ['id', 'date', 'propertyId', 'propertyName', 'amount', 'reason', 'category', 'notes', 'createdAt'];
+    // Updated headers for expenses to include unitId and unitNumber
+    const headers = ['id', 'date', 'propertyId', 'propertyName', 'unitId', 'unitNumber', 'amount', 'reason', 'category', 'notes', 'createdAt'];
     const csv = convertToCsv(expenses, headers);
     downloadCsv(csv, 'expense_records.csv');
   };
@@ -2995,11 +3526,13 @@ const ExportSystem = () => {
       propertyNotes: prop.notes || '',
     })));
 
+    // Updated headers for properties and units
     const headers = [
       'id', 'propertyId', 'propertyName', 'propertyImageUrl', 'propertyNotes',
       'number', 'tenantName', 'rentAmount', 'moveInDate', 'notes',
       'phoneNumber', 'email', 'emergencyContactName', 'emergencyContactPhone',
-      'leaseStartDate', 'leaseEndDate', 'securityDepositAmount', 'leaseTerm', 'createdAt'
+      'leaseStartDate', 'leaseEndDate', 'securityDepositAmount', 'leaseTerm',
+      'rentIncrementAmount', 'rentIncrementEffectiveDate', 'createdAt' // Updated increment fields
     ];
     const csv = convertToCsv(allUnits, headers);
     downloadCsv(csv, 'properties_units_data.csv');
@@ -3059,13 +3592,13 @@ const ExportSystem = () => {
 
         <div className="mt-6 text-gray-600 text-sm space-y-2">
           <p>
-            <span className="font-semibold">Rent Data Fields:</span> ID, Property ID, Property Name, Unit ID, Unit Number, Tenant Name, Amount, Month/Year, Is Paid, Due Date, Created At.
+            <span className="font-semibold">Rent Data Fields:</span> ID, Property ID, Property Name, Unit ID, Unit Number, Tenant Name, Amount Due, Amount Received, Month/Year, Is Paid, Payment Date, Due Date, Is Partial Payment, Partial Reason, Created At.
           </p>
           <p>
-            <span className="font-semibold">Expense Data Fields:</span> ID, Date, Property ID, Property Name, Amount, Reason, Category, Notes, Created At.
+            <span className="font-semibold">Expense Data Fields:</span> ID, Date, Property ID, Property Name, Unit ID, Unit Number, Amount, Reason, Category, Notes, Created At.
           </p>
           <p>
-            <span className="font-semibold">Properties & Units Data Fields:</span> ID, Property ID, Property Name, Property Image URL, Property Notes, Unit Number, Tenant Name, Rent Amount, Move-in Date, Unit Notes, Phone Number, Email, Emergency Contact Name, Emergency Contact Phone, Lease Start Date, Lease End Date, Security Deposit Amount, Lease Term, Created At.
+            <span className="font-semibold">Properties & Units Data Fields:</span> ID, Property ID, Property Name, Property Image URL, Property Notes, Unit Number, Tenant Name, Rent Amount, Move-in Date, Unit Notes, Phone Number, Email, Emergency Contact Name, Emergency Contact Phone, Lease Start Date, Lease End Date, Security Deposit Amount, Lease Term, Rent Increment Amount, Rent Increment Effective Date, Created At.
           </p>
           <p>
             <span className="font-semibold">Task Data Fields:</span> ID, Description, Due Date, Property ID, Property Name, Unit ID, Unit Number, Status, Notes, Created At.
@@ -3084,7 +3617,7 @@ const ExportSystem = () => {
 //   body { font-family: 'Inter', sans-serif; }
 //   /* Custom animation for modal */
 //   @keyframes fade-in-up {
-//     from { opacity: 0; transform: translateY(20px); }
+//     from { opacity: 0; transform: translateY(20px); }\
 //     to { opacity: 1; transform: translateY(0); }
 //   }
 //   .animate-fade-in-up {
