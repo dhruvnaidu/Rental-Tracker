@@ -79,6 +79,30 @@ const Modal = ({ title, children, onClose, isOpen, maxWidth = 'max-w-lg' }) => {
   );
 };
 
+// Custom Message Box Component
+const MessageBox = ({ message, type, onClose }) => {
+  const bgColor = type === 'error' ? 'bg-red-500' : 'bg-green-500';
+  const titleText = type === 'error' ? 'Error' : 'Success';
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 3000); // Message disappears after 3 seconds
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed top-4 right-4 ${bgColor} text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up flex items-center`}>
+      <div className="mr-2 font-bold">{titleText}:</div>
+      <div>{message}</div>
+      <button onClick={onClose} className="ml-4 text-white hover:text-gray-100">
+        <XCircle size={16} />
+      </button>
+    </div>
+  );
+};
+
+
 // AuthScreen Component for Login/Signup
 const AuthScreen = () => {
   const { auth } = useContext(AppContext);
@@ -87,6 +111,11 @@ const AuthScreen = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [messageBox, setMessageBox] = useState(null); // State for message box
+
+  const showMessage = (message, type) => {
+    setMessageBox({ message, type });
+  };
 
   const handleAuthAction = async () => {
     setError('');
@@ -94,24 +123,15 @@ const AuthScreen = () => {
     try {
       if (isRegistering) {
         await createUserWithEmailAndPassword(auth, email, password);
-        // Using a custom message box instead of alert()
-        const messageBox = document.createElement('div');
-        messageBox.className = 'fixed top-4 right-4 bg-green-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
-        messageBox.textContent = 'Registration successful! You are now logged in.';
-        document.body.appendChild(messageBox);
-        setTimeout(() => messageBox.remove(), 3000);
+        showMessage('Registration successful! You are now logged in.', 'success');
       } else {
         await signInWithEmailAndPassword(auth, email, password);
-        // Using a custom message box instead of alert()
-        const messageBox = document.createElement('div');
-        messageBox.className = 'fixed top-4 right-4 bg-green-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
-        messageBox.textContent = 'Login successful!';
-        document.body.appendChild(messageBox);
-        setTimeout(() => messageBox.remove(), 3000);
+        showMessage('Login successful!', 'success');
       }
     } catch (e) {
       console.error("Auth Error:", e.message);
       setError(e.message);
+      showMessage(e.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -187,6 +207,7 @@ const AuthScreen = () => {
           </button>
         </p>
       </div>
+      {messageBox && <MessageBox message={messageBox.message} type={messageBox.type} onClose={() => setMessageBox(null)} />}
     </div>
   );
 };
@@ -198,6 +219,11 @@ const App = () => {
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [messageBox, setMessageBox] = useState(null); // State for message box
+
+  const showMessage = (message, type) => {
+    setMessageBox({ message, type });
+  };
 
   // Your web app's Firebase configuration
   const firebaseConfig = {
@@ -244,20 +270,10 @@ const App = () => {
         await signOut(auth);
         setUserId(null);
         setActiveTab('dashboard');
-        // Using a custom message box instead of alert()
-        const messageBox = document.createElement('div');
-        messageBox.className = 'fixed top-4 right-4 bg-green-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
-        messageBox.textContent = 'You have been logged out.';
-        document.body.appendChild(messageBox);
-        setTimeout(() => messageBox.remove(), 3000);
+        showMessage('You have been logged out.', 'success');
       } catch (error) {
         console.error("Error logging out:", error);
-        // Using a custom message box instead of alert()
-        const messageBox = document.createElement('div');
-        messageBox.className = 'fixed top-4 right-4 bg-red-500 text-white p-3 rounded-md shadow-lg z-50 animate-fade-in-up';
-        messageBox.textContent = 'Failed to log out: ' + error.message;
-        document.body.appendChild(messageBox);
-        setTimeout(() => messageBox.remove(), 3000);
+        showMessage('Failed to log out: ' + error.message, 'error');
       }
     }
   };
@@ -377,6 +393,7 @@ const App = () => {
           </main>
         </div>
       </div>
+      {messageBox && <MessageBox message={messageBox.message} type={messageBox.type} onClose={() => setMessageBox(null)} />}
     </AppContext.Provider>
   );
 };
@@ -776,7 +793,7 @@ const Dashboard = () => {
 // --- Property & Unit Manager Component ---
 const PropertyManager = () => {
   // Destructure formatDate and formatDateForInput from AppContext
-  const { db, userId, isAuthReady, __app_id, formatDate, formatDateForInput } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [newPropertyName, setNewPropertyName] = useState('');
   const [newPropertyNotes, setNewPropertyNotes] = useState('');
@@ -796,7 +813,7 @@ const PropertyManager = () => {
   const [newLeaseStartDate, setNewLeaseStartDate] = useState('');
   const [newLeaseEndDate, setNewLeaseEndDate] = useState('');
   const [newSecurityDepositAmount, setNewSecurityDepositAmount] = useState('');
-  const [newLeaseTerm, setNewLeaseTerm] = '';
+  const [newLeaseTerm, setNewLeaseTerm] = useState('');
   // New fields for rent increment amount and effective date
   const [newRentIncrementAmount, setNewRentIncrementAmount] = useState('');
   const [newRentIncrementEffectiveDate, setNewRentIncrementEffectiveDate] = useState('');
@@ -889,10 +906,41 @@ const PropertyManager = () => {
   };
 
   const handleAddEditUnit = async () => {
-    if (!db || !userId || !isAuthReady || !__app_id || !selectedPropertyForUnit || !newUnitNumber.trim() || !newTenantName.trim() || !newRentAmount || !newMoveInDate) {
-      setFeedbackMessage("All required unit fields are missing (Unit #, Tenant Name, Rent Amount, Move-in Date).");
+    console.log("Attempting to add/edit unit...");
+    console.log("Selected Property For Unit:", selectedPropertyForUnit);
+    console.log("New Unit Number:", newUnitNumber);
+    console.log("New Tenant Name:", newTenantName);
+    console.log("New Rent Amount:", newRentAmount);
+    console.log("New Move In Date:", newMoveInDate);
+
+    if (!db || !userId || !isAuthReady || !selectedPropertyForUnit || !newUnitNumber.trim() || !newTenantName.trim() || !newMoveInDate) {
+      setFeedbackMessage("All required unit fields are missing (Unit #, Tenant Name, Move-in Date).");
+      console.error("Validation failed: Missing required fields.");
       return;
     }
+
+    // Validate numeric fields specifically
+    const parsedRentAmount = parseFloat(newRentAmount);
+    if (isNaN(parsedRentAmount) || parsedRentAmount < 0) {
+      setFeedbackMessage("Rent Amount must be a valid non-negative number.");
+      console.error("Validation failed: Invalid Rent Amount.");
+      return;
+    }
+
+    const parsedSecurityDepositAmount = parseFloat(newSecurityDepositAmount || 0);
+    if (isNaN(parsedSecurityDepositAmount) || parsedSecurityDepositAmount < 0) {
+      setFeedbackMessage("Security Deposit Amount must be a valid non-negative number.");
+      console.error("Validation failed: Invalid Security Deposit Amount.");
+      return;
+    }
+
+    const parsedRentIncrementAmount = parseFloat(newRentIncrementAmount || 0);
+    if (isNaN(parsedRentIncrementAmount) || parsedRentIncrementAmount < 0) {
+      setFeedbackMessage("Rent Increment Amount must be a valid non-negative number.");
+      console.error("Validation failed: Invalid Rent Increment Amount.");
+      return;
+    }
+
     setFeedbackMessage('');
     try {
       const unitData = {
@@ -900,7 +948,7 @@ const PropertyManager = () => {
         propertyName: selectedPropertyForUnit.name,
         number: newUnitNumber,
         tenantName: newTenantName,
-        rentAmount: parseFloat(newRentAmount),
+        rentAmount: parsedRentAmount, // Use parsed value
         moveInDate: newMoveInDate,
         notes: newUnitNotes,
         phoneNumber: newPhoneNumber,
@@ -909,17 +957,21 @@ const PropertyManager = () => {
         emergencyContactPhone: newEmergencyContactPhone,
         leaseStartDate: newLeaseStartDate,
         leaseEndDate: newLeaseEndDate,
-        securityDepositAmount: parseFloat(newSecurityDepositAmount || 0),
+        securityDepositAmount: parsedSecurityDepositAmount, // Use parsed value
         leaseTerm: newLeaseTerm,
         // New fields for rent increment
-        rentIncrementAmount: parseFloat(newRentIncrementAmount || 0),
+        rentIncrementAmount: parsedRentIncrementAmount, // Use parsed value
         rentIncrementEffectiveDate: newRentIncrementEffectiveDate || null,
       };
+
+      console.log("Unit data to be saved:", unitData);
+
 
       if (editingUnit) {
         const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${selectedPropertyForUnit.id}/units`, editingUnit.id);
         await updateDoc(unitDocRef, unitData);
         setFeedbackMessage("Unit updated successfully!");
+        console.log("Unit updated in Firestore.");
       } else {
         const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${selectedPropertyForUnit.id}/units`);
         await addDoc(unitsCollectionRef, {
@@ -927,6 +979,7 @@ const PropertyManager = () => {
           createdAt: new Date().toISOString(),
         });
         setFeedbackMessage("Unit added successfully!");
+        console.log("Unit added to Firestore.");
       }
       setNewUnitNumber('');
       setNewTenantName('');
@@ -952,6 +1005,7 @@ const PropertyManager = () => {
   };
 
   const openAddUnitModal = (property) => {
+    console.log("openAddUnitModal called. Type of setNewLeaseTerm:", typeof setNewLeaseTerm); // Debug log
     setSelectedPropertyForUnit(property);
     setEditingUnit(null);
     setNewUnitNumber('');
@@ -974,6 +1028,7 @@ const PropertyManager = () => {
   };
 
   const openEditUnitModal = (property, unit) => {
+    console.log("openEditUnitModal called. Type of setNewLeaseTerm:", typeof setNewLeaseTerm); // Debug log
     setSelectedPropertyForUnit(property);
     setEditingUnit(unit);
     setNewUnitNumber(unit.number);
@@ -3618,7 +3673,7 @@ const ExportSystem = () => {
 //   body { font-family: 'Inter', sans-serif; }
 //   /* Custom animation for modal */
 //   @keyframes fade-in-up {
-//     from { opacity: 0; transform: translateY(20px); }\
+//     from { opacity: 0; transform: translateY(20px); }
 //     to { opacity: 1; transform: translateY(0); }
 //   }
 //   .animate-fade-in-up {
