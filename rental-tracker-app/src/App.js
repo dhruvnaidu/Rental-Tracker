@@ -201,7 +201,7 @@ const App = () => {
 
   // Your web app's Firebase configuration
   const firebaseConfig = {
-    apiKey: "AIzaSyAQJm88i3gwaGzvhJMxONzUr78tZqBRXXs",
+    apiKey: "AIzaSyAQJm88i3gwaGzvhJMxONzUr78tZqBRfXs",
     authDomain: "rentaltrackerapp.firebaseapp.com",
     projectId: "rentaltrackerapp",
     storageBucket: "rentaltrackerapp.firebasestorage.app",
