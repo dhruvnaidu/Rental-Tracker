@@ -1022,14 +1022,29 @@ const PropertyManager = () => {
         const propertyDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties`, confirmDeleteModal.id);
         const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${confirmDeleteModal.id}/units`);
         const unitSnapshot = await getDocs(unitsCollectionRef);
-        const deleteUnitPromises = unitSnapshot.docs.map(unitDoc => deleteDoc(unitDoc.ref));
+        const deleteUnitPromises = unitSnapshot.docs.map(async (unitDoc) => {
+          // Delete associated rent records for each unit
+          const rentRecordsQuery = query(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), where("unitId", "==", unitDoc.id));
+          const rentRecordsSnapshot = await getDocs(rentRecordsQuery);
+          const deleteRentPromises = rentRecordsSnapshot.docs.map(rentDoc => deleteDoc(rentDoc.ref));
+          await Promise.all(deleteRentPromises);
+          // Delete the unit itself
+          return deleteDoc(unitDoc.ref);
+        });
         await Promise.all(deleteUnitPromises);
         await deleteDoc(propertyDocRef);
-        setFeedbackMessage("Property and its units deleted successfully!");
+        setFeedbackMessage("Property and its units (and associated rent records) deleted successfully!");
       } else if (confirmDeleteModal.type === 'unit') {
         const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${confirmDeleteModal.propertyId}/units`, confirmDeleteModal.id);
         await deleteDoc(unitDocRef);
-        setFeedbackMessage("Unit deleted successfully!");
+
+        // Delete associated rent records for the unit
+        const rentRecordsQuery = query(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), where("unitId", "==", confirmDeleteModal.id));
+        const rentRecordsSnapshot = await getDocs(rentRecordsQuery);
+        const deleteRentPromises = rentRecordsSnapshot.docs.map(rentDoc => deleteDoc(rentDoc.ref));
+        await Promise.all(deleteRentPromises);
+
+        setFeedbackMessage("Unit and its associated rent records deleted successfully!");
       }
       setConfirmDeleteModal(null);
     } catch (e) {
@@ -1448,7 +1463,10 @@ const PropertyManager = () => {
             Are you sure you want to delete{' '}
             <span className="font-semibold">{confirmDeleteModal?.nameOrNumber}</span>?
             {confirmDeleteModal?.type === 'property' && (
-              <span className="font-bold text-red-600"> This will also delete all associated units!</span>
+              <span className="font-bold text-red-600"> This will also delete all associated units AND their rent records!</span>
+            )}
+            {confirmDeleteModal?.type === 'unit' && (
+              <span className="font-bold text-red-600"> This will also delete all associated rent records!</span>
             )}
           </p>
           <div className="flex justify-end space-x-3">
@@ -2086,7 +2104,7 @@ const MonthlyRentTracker = () => {
                       type="checkbox"
                       className="form-checkbox h-4 w-4 text-blue-600 rounded"
                       checked={selectedArrearsRecords.length === arrearsRecords.length && arrearsRecords.length > 0}
-                      onChange={() => handleSelectAllArrearsRecords()}
+                      onChange={() => handleSelectArrearsRecord(record.id)}
                     />
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
