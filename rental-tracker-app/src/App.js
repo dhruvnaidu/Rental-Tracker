@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, setDoc, getDoc } from 'firebase/firestore'; // Added getDoc
 import {
   Home,
   Building,
@@ -782,8 +782,10 @@ const PropertyManager = () => {
   const { db, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [newPropertyName, setNewPropertyName] = useState('');
-  const [newPropertyNotes, setNewPropertyNotes] = useState('');
-  const [newPropertyImageUrl, setNewPropertyImageUrl] = useState('');
+  // Changed from newPropertyNotes to newPropertyAddress
+  const [newPropertyAddress, setNewPropertyAddress] = useState('');
+  // Removed newPropertyImageUrl state
+  // const [newPropertyImageUrl, setNewPropertyImageUrl] = useState('');
   const [editingProperty, setEditingProperty] = useState(null);
 
   const [selectedPropertyForUnit, setSelectedPropertyForUnit] = useState(null);
@@ -813,7 +815,8 @@ const PropertyManager = () => {
   const [currentUnitForHistory, setCurrentUnitForHistory] = useState(null);
   const [feedbackMessage, setFeedbackMessage] = useState('');
 
-  const placeholderImage = "https://placehold.co/100x75/aabbcc/ffffff?text=No+Image";
+  // Removed placeholderImage as it's no longer used
+  // const placeholderImage = "https://placehold.co/100x75/aabbcc/ffffff?text=No+Image";
 
   useEffect(() => {
     if (!db || !userId || !isAuthReady || !__app_id) return;
@@ -846,23 +849,29 @@ const PropertyManager = () => {
         const propertyDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties`, editingProperty.id);
         await updateDoc(propertyDocRef, {
           name: newPropertyName,
-          notes: newPropertyNotes,
-          imageUrl: newPropertyImageUrl,
+          // Changed from notes to address
+          address: newPropertyAddress,
+          // Removed imageUrl update
+          // imageUrl: newPropertyImageUrl,
         });
         setFeedbackMessage("Property updated successfully!");
       } else {
         const propertiesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties`);
         await addDoc(propertiesCollectionRef, {
           name: newPropertyName,
-          notes: newPropertyNotes,
-          imageUrl: newPropertyImageUrl,
+          // Changed from notes to address
+          address: newPropertyAddress,
+          // Removed imageUrl from add
+          // imageUrl: newPropertyImageUrl,
           createdAt: new Date().toISOString(),
         });
         setFeedbackMessage("Property added successfully!");
       }
       setNewPropertyName('');
-      setNewPropertyNotes('');
-      setNewPropertyImageUrl('');
+      // Changed from setNewPropertyNotes to setNewPropertyAddress
+      setNewPropertyAddress('');
+      // Removed setNewPropertyImageUrl
+      // setNewPropertyImageUrl('');
       setEditingProperty(null);
       setShowPropertyModal(false);
     } catch (e) {
@@ -874,8 +883,10 @@ const PropertyManager = () => {
   const openEditPropertyModal = (property) => {
     setEditingProperty(property);
     setNewPropertyName(property.name);
-    setNewPropertyNotes(property.notes || '');
-    setNewPropertyImageUrl(property.imageUrl || '');
+    // Changed from setNewPropertyNotes to setNewPropertyAddress
+    setNewPropertyAddress(property.address || ''); // Use property.address
+    // Removed setNewPropertyImageUrl
+    // setNewPropertyImageUrl(property.imageUrl || '');
     setFeedbackMessage('');
     setShowPropertyModal(true);
   };
@@ -883,8 +894,10 @@ const PropertyManager = () => {
   const openAddPropertyModal = () => {
     setEditingProperty(null);
     setNewPropertyName('');
-    setNewPropertyNotes('');
-    setNewPropertyImageUrl('');
+    // Changed from setNewPropertyNotes to setNewPropertyAddress
+    setNewPropertyAddress('');
+    // Removed setNewPropertyImageUrl
+    // setNewPropertyImageUrl('');
     setFeedbackMessage('');
     setShowPropertyModal(true);
   };
@@ -1089,17 +1102,19 @@ const PropertyManager = () => {
             <div key={property.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-200">
                 <div className="flex items-center">
-                  {property.imageUrl && (
+                  {/* Removed Property Image URL display */}
+                  {/* {property.imageUrl && (
                     <img
                       src={property.imageUrl}
                       alt={property.name}
                       className="w-20 h-15 rounded-md object-cover mr-4"
                       onError={(e) => { e.target.onerror = null; e.target.src = placeholderImage; }}
                     />
-                  )}
+                  )} */}
                   <div>
                     <h3 className="text-2xl font-semibold text-gray-800">{property.name}</h3>
-                    {property.notes && <p className="text-gray-600 text-sm italic">{property.notes}</p>}
+                    {/* Changed from property.notes to property.address */}
+                    {property.address && <p className="text-gray-600 text-sm italic">{property.address}</p>}
                   </div>
                 </div>
                 <div className="flex space-x-2">
@@ -1203,7 +1218,8 @@ const PropertyManager = () => {
               placeholder="e.g., Main Street Apartments"
             />
           </div>
-          <div>
+          {/* Removed Property Image URL input */}
+          {/* <div>
             <label htmlFor="propertyImageUrl" className="block text-sm font-medium text-gray-700">Property Image URL (Optional)</label>
             <input
               type="url"
@@ -1214,16 +1230,19 @@ const PropertyManager = () => {
               placeholder="e.g., https://example.com/property.jpg"
             />
             <p className="mt-1 text-xs text-gray-500">Provide a direct URL to an image. No file uploads.</p>
-          </div>
+          </div> */}
           <div>
-            <label htmlFor="propertyNotes" className="block text-sm font-medium text-gray-700">Notes (Optional)</label>
+            {/* Changed label from Notes (Optional) to Address */}
+            <label htmlFor="propertyAddress" className="block text-sm font-medium text-gray-700">Address</label>
             <textarea
-              id="propertyNotes"
-              value={newPropertyNotes}
-              onChange={(e) => setNewPropertyNotes(e.target.value)}
+              id="propertyAddress"
+              // Changed from newPropertyNotes to newPropertyAddress
+              value={newPropertyAddress}
+              // Changed from setNewPropertyNotes to setNewPropertyAddress
+              onChange={(e) => setNewPropertyAddress(e.target.value)}
               rows="3"
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Any specific details about the property..."
+              placeholder="e.g., 123 Main St, Anytown, USA"
             ></textarea>
           </div>
           <div className="flex justify-end space-x-3">
@@ -1613,11 +1632,13 @@ const MonthlyRentTracker = () => {
               }
 
               const targetMonthYearString = `${year}-${String(month).padStart(2, '0')}`;
-              const existingRecord = rentRecords.find(
-                r => r.unitId === unit.id && r.monthYear === targetMonthYearString
-              );
+              const docId = `${unit.id}_${targetMonthYearString}`; // Unique ID for the rent record
 
-              if (existingRecord) {
+              const rentRecordsDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, docId);
+              const docSnap = await getDoc(rentRecordsDocRef); // Check if document exists
+
+              if (docSnap.exists()) {
+                // Document already exists, skip adding
                 continue;
               }
               
@@ -1629,7 +1650,7 @@ const MonthlyRentTracker = () => {
               const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
 
               try {
-                await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), {
+                await setDoc(rentRecordsDocRef, { // Use setDoc with explicit ID
                   propertyId: property.id,
                   propertyName: property.name,
                   unitId: unit.id,
@@ -1658,7 +1679,7 @@ const MonthlyRentTracker = () => {
         generateAndIncrementRecords();
     }
 
-  }, [db, userId, isAuthReady, properties, rentRecords, __app_id]);
+  }, [db, userId, isAuthReady, properties, __app_id]); // Removed rentRecords from dependency array to prevent re-triggering on every rent record change
 
   const filteredRentRecords = useMemo(() => {
     return rentRecords.filter(record => {
@@ -2894,7 +2915,7 @@ const TaskManager = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold text-gray-800 mb-6">Task Manager</h2>
+      <h2 className="text-3xl font-bold text-gray-800 mb-6">TaskManager</h2>
 
       {feedbackMessage && (
         <div className={`p-3 rounded-md ${feedbackMessage.startsWith('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'} transition-all duration-300`}>
@@ -3405,12 +3426,14 @@ const ExportSystem = () => {
     const allUnits = properties.flatMap(prop => prop.units.map(unit => ({
       ...unit,
       propertyName: prop.name,
-      propertyImageUrl: prop.imageUrl || '',
-      propertyNotes: prop.notes || '',
+      // Removed propertyImageUrl from export
+      // propertyImageUrl: prop.imageUrl || '',
+      // Changed propertyNotes to propertyAddress for export
+      propertyAddress: prop.address || '',
     })));
 
     const headers = [
-      'id', 'propertyId', 'propertyName', 'propertyImageUrl', 'propertyNotes',
+      'id', 'propertyId', 'propertyName', /* Removed 'propertyImageUrl' */ 'propertyAddress',
       'number', 'tenantName', 'rentAmount', 'moveInDate', 'notes',
       'phoneNumber', 'email', 'emergencyContactName', 'emergencyContactPhone',
       'leaseStartDate', 'leaseEndDate', 'securityDepositAmount', 'leaseTerm',
