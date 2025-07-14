@@ -227,7 +227,7 @@ const App = () => {
     setMessageBox({ message, type });
   };
 
-  const firebaseConfig = {
+  const firebaseConfig = useMemo(() => ({
     apiKey: "AIzaSyAQJm88i3gwaGzvhJMxONzUr78tZqBRfXs",
     authDomain: "rentaltrackerapp.firebaseapp.com",
     projectId: "rentaltrackerapp",
@@ -235,7 +235,7 @@ const App = () => {
     messagingSenderId: "341920558561",
     appId: "1:341920558561:web:1466c2166c1c2b1a5e76a0",
     measurementId: "G-VXF4GW40FK"
-  };
+  }), []);
 
   const __app_id = firebaseConfig.projectId;
 
@@ -262,7 +262,7 @@ const App = () => {
       console.error("Failed to initialize Firebase:", error);
       setIsAuthReady(true);
     }
-  }, []);
+  }, [firebaseConfig]);
 
   const handleLogout = async () => {
     if (auth) {
@@ -1022,29 +1022,14 @@ const PropertyManager = () => {
         const propertyDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties`, confirmDeleteModal.id);
         const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${confirmDeleteModal.id}/units`);
         const unitSnapshot = await getDocs(unitsCollectionRef);
-        const deleteUnitPromises = unitSnapshot.docs.map(async (unitDoc) => {
-          // Delete associated rent records for each unit
-          const rentRecordsQuery = query(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), where("unitId", "==", unitDoc.id));
-          const rentRecordsSnapshot = await getDocs(rentRecordsQuery);
-          const deleteRentPromises = rentRecordsSnapshot.docs.map(rentDoc => deleteDoc(rentDoc.ref));
-          await Promise.all(deleteRentPromises);
-          // Delete the unit itself
-          return deleteDoc(unitDoc.ref);
-        });
+        const deleteUnitPromises = unitSnapshot.docs.map(unitDoc => deleteDoc(unitDoc.ref));
         await Promise.all(deleteUnitPromises);
         await deleteDoc(propertyDocRef);
-        setFeedbackMessage("Property and its units (and associated rent records) deleted successfully!");
+        setFeedbackMessage("Property and its units deleted successfully!");
       } else if (confirmDeleteModal.type === 'unit') {
         const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${confirmDeleteModal.propertyId}/units`, confirmDeleteModal.id);
         await deleteDoc(unitDocRef);
-
-        // Delete associated rent records for the unit
-        const rentRecordsQuery = query(collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`), where("unitId", "==", confirmDeleteModal.id));
-        const rentRecordsSnapshot = await getDocs(rentRecordsQuery);
-        const deleteRentPromises = rentRecordsSnapshot.docs.map(rentDoc => deleteDoc(rentDoc.ref));
-        await Promise.all(deleteRentPromises);
-
-        setFeedbackMessage("Unit and its associated rent records deleted successfully!");
+        setFeedbackMessage("Unit deleted successfully!");
       }
       setConfirmDeleteModal(null);
     } catch (e) {
@@ -1463,10 +1448,7 @@ const PropertyManager = () => {
             Are you sure you want to delete{' '}
             <span className="font-semibold">{confirmDeleteModal?.nameOrNumber}</span>?
             {confirmDeleteModal?.type === 'property' && (
-              <span className="font-bold text-red-600"> This will also delete all associated units AND their rent records!</span>
-            )}
-            {confirmDeleteModal?.type === 'unit' && (
-              <span className="font-bold text-red-600"> This will also delete all associated rent records!</span>
+              <span className="font-bold text-red-600"> This will also delete all associated units!</span>
             )}
           </p>
           <div className="flex justify-end space-x-3">
@@ -1532,7 +1514,7 @@ const PropertyManager = () => {
 
 // --- Monthly Rent Tracker Component (Corrected) ---
 const MonthlyRentTracker = () => {
-  const { db, userId, isAuthReady, __app_id, formatDate, formatCurrency } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate, formatCurrency, formatDateForInput } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [rentRecords, setRentRecords] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -1743,7 +1725,7 @@ const MonthlyRentTracker = () => {
 
   const openEditRentPaymentModal = (record) => {
     setCurrentRentRecordToEdit(record);
-    setEditPaymentDate(record.paymentDate || new Date().toISOString().slice(0, 10));
+    setEditPaymentDate(record.paymentDate ? formatDateForInput(record.paymentDate) : new Date().toISOString().slice(0, 10));
     setEditAmountReceived(record.amountReceived || record.amount || '');
     setEditIsFullPayment((record.amountReceived || 0) >= (record.amount || 0));
     setEditPartialReason(record.partialReason || '');
@@ -1835,8 +1817,8 @@ const MonthlyRentTracker = () => {
     }
   };
 
-  const openConfirmDeleteRentModal = (id, propertyName, unitNumber, monthYear) => {
-    setConfirmDeleteRentModal({ id, propertyName, unitNumber, monthYear });
+  const openConfirmDeleteRentModal = (record) => {
+    setConfirmDeleteRentModal(record);
     setFeedbackMessage('');
   };
 
@@ -2062,7 +2044,7 @@ const MonthlyRentTracker = () => {
                         <Edit size={14} className="mr-1" /> Edit Payment
                       </button>
                       <button
-                        onClick={() => openConfirmDeleteRentModal(record.id, record.propertyName, record.unitNumber, record.monthYear)}
+                        onClick={() => openConfirmDeleteRentModal(record)}
                         className="text-red-600 hover:text-red-900"
                         title="Delete Rent Record"
                       >
@@ -2104,7 +2086,7 @@ const MonthlyRentTracker = () => {
                       type="checkbox"
                       className="form-checkbox h-4 w-4 text-blue-600 rounded"
                       checked={selectedArrearsRecords.length === arrearsRecords.length && arrearsRecords.length > 0}
-                      onChange={() => handleSelectArrearsRecord(record.id)}
+                      onChange={() => handleSelectAllArrearsRecords()}
                     />
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
@@ -2150,7 +2132,7 @@ const MonthlyRentTracker = () => {
                           <CheckCircle size={14} className="mr-1" /> Update Payment
                         </button>
                         <button
-                          onClick={() => openConfirmDeleteRentModal(record.id, record.propertyName, record.unitNumber, record.monthYear)}
+                          onClick={() => openConfirmDeleteRentModal(record)}
                           className="text-red-600 hover:text-red-900 ml-2"
                           title="Delete Rent Record"
                         >
@@ -2165,6 +2147,56 @@ const MonthlyRentTracker = () => {
           </div>
         )}
       </div>
+
+      {/* --- ADDED MODALS --- */}
+      <Modal isOpen={showEditRentPaymentModal} title={`Edit Payment for ${currentRentRecordToEdit?.tenantName}`} onClose={() => setShowEditRentPaymentModal(false)}>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="editPaymentDate" className="block text-sm font-medium text-gray-700">Payment Date</label>
+            <input type="date" id="editPaymentDate" value={editPaymentDate} onChange={(e) => setEditPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"/>
+          </div>
+          <div>
+            <label htmlFor="editAmountReceived" className="block text-sm font-medium text-gray-700">Amount Received</label>
+            <input type="number" id="editAmountReceived" value={editAmountReceived} onChange={(e) => setEditAmountReceived(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" />
+          </div>
+          <div>
+            <label className="flex items-center">
+              <input type="checkbox" checked={!editIsFullPayment} onChange={(e) => setEditIsFullPayment(!e.target.checked)} className="form-checkbox h-5 w-5 text-blue-600"/>
+              <span className="ml-2 text-sm text-gray-700">Is this a partial payment?</span>
+            </label>
+          </div>
+          {!editIsFullPayment && (
+            <div>
+              <label htmlFor="editPartialReason" className="block text-sm font-medium text-gray-700">Reason for Difference</label>
+              <input type="text" id="editPartialReason" value={editPartialReason} onChange={(e) => setEditPartialReason(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"/>
+            </div>
+          )}
+          <div className="flex justify-end space-x-3">
+            <button onClick={() => setShowEditRentPaymentModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+            <button onClick={handleUpdateRentPayment} className="px-4 py-2 bg-blue-600 text-white rounded-md">Update Payment</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={!!confirmDeleteRentModal} title="Confirm Delete Rent Record" onClose={() => setConfirmDeleteRentModal(null)}>
+        <div className="space-y-4">
+          <p>Are you sure you want to delete the rent record for <strong>{confirmDeleteRentModal?.tenantName}</strong> for <strong>{confirmDeleteRentModal?.monthYear}</strong>?</p>
+          <div className="flex justify-end space-x-3">
+            <button onClick={() => setConfirmDeleteRentModal(null)} className="px-4 py-2 border rounded-md">Cancel</button>
+            <button onClick={handleDeleteRentRecord} className="px-4 py-2 bg-red-600 text-white rounded-md">Delete</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={confirmBulkDeleteArrearsModal} title="Confirm Bulk Delete" onClose={() => setConfirmBulkDeleteArrearsModal(false)}>
+        <div className="space-y-4">
+          <p>Are you sure you want to delete the selected <strong>{selectedArrearsRecords.length}</strong> arrears records? This action cannot be undone.</p>
+          <div className="flex justify-end space-x-3">
+            <button onClick={() => setConfirmBulkDeleteArrearsModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+            <button onClick={handleBulkDeleteArrearsRecords} className="px-4 py-2 bg-red-600 text-white rounded-md">Delete Records</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
