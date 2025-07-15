@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, setDoc, getDoc } from 'firebase/firestore'; // Added getDoc
+import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, setDoc } from 'firebase/firestore'; // Removed getDoc
 import {
   Home,
   Building,
@@ -264,6 +264,99 @@ const App = () => {
     }
   }, [firebaseConfig]);
 
+  // Function to generate/regenerate rent records for a specific unit
+  const generateRentRecordsForUnit = async (unitData, propertyData) => {
+    if (!db || !userId || !__app_id) {
+        console.error("Firebase not initialized or userId missing for rent record generation.");
+        return;
+    }
+
+    const rentRecordsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`);
+    const unitRentQuery = query(rentRecordsCollectionRef, where("unitId", "==", unitData.id));
+
+    // 1. Delete existing rent records for this unit
+    try {
+        const existingRentRecordsSnapshot = await getDocs(unitRentQuery);
+        const deletePromises = existingRentRecordsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+        console.log(`Deleted ${deletePromises.length} old rent records for unit ${unitData.unitNumber}.`);
+    } catch (error) {
+        console.error("Error deleting old rent records:", error);
+        showMessage(`Error deleting old rent records: ${error.message}`, 'error');
+        return; // Stop if deletion fails
+    }
+
+    // 2. Generate new rent records from move-in date up to current month
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const moveInDateParts = unitData.moveInDate.split('-');
+    if (moveInDateParts.length !== 3) {
+        console.warn(`Invalid moveInDate format for unit ${unitData.id}: ${unitData.moveInDate}. Skipping rent generation.`);
+        return;
+    }
+
+    const moveInYear = parseInt(moveInDateParts[0], 10);
+    const moveInMonth = parseInt(moveInDateParts[1], 10); // 1-indexed month
+    const moveInDay = parseInt(moveInDateParts[2], 10);
+
+    const moveInDateObj = new Date(moveInYear, moveInMonth - 1, moveInDay);
+    if (isNaN(moveInDateObj.getTime())) {
+        console.warn(`Invalid moveInDate for unit ${unitData.id}: ${unitData.moveInDate}. Skipping rent generation.`);
+        return;
+    }
+
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+
+    const rentGenerationPromises = [];
+
+    for (let year = moveInYear; year <= currentYear; year++) {
+        const loopStartMonth = (year === moveInYear) ? moveInMonth : 1;
+        const loopEndMonth = (year === currentYear) ? currentMonth : 12;
+
+        for (let month = loopStartMonth; month <= loopEndMonth; month++) {
+            const targetDate = new Date(year, month - 1, moveInDay);
+            if (targetDate > today) {
+                continue; // Don't generate for future months
+            }
+
+            const targetMonthYearString = `${year}-${String(month).padStart(2, '0')}`;
+            const docId = `${unitData.id}_${targetMonthYearString}`;
+
+            const lastDayOfTargetMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+            const finalRentDueDay = Math.min(moveInDay, lastDayOfTargetMonth);
+            const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
+
+            rentGenerationPromises.push(
+                setDoc(doc(rentRecordsCollectionRef, docId), {
+                    propertyId: propertyData.id,
+                    propertyName: propertyData.name,
+                    unitId: unitData.id,
+                    unitNumber: unitData.number,
+                    tenantName: unitData.tenantName,
+                    amount: parseFloat(unitData.rentAmount || 0),
+                    monthYear: targetMonthYearString,
+                    isPaid: false, // Default to unpaid on generation
+                    dueDate: rentDueDate,
+                    paymentDate: null,
+                    amountReceived: 0,
+                    isPartialPayment: false,
+                    partialReason: '',
+                    createdAt: new Date().toISOString(),
+                }, { merge: true }) // Use merge: true to avoid overwriting existing payment status if it was already updated manually
+            );
+        }
+    }
+    try {
+        await Promise.all(rentGenerationPromises);
+        console.log(`Generated/updated ${rentGenerationPromises.length} rent records for unit ${unitData.unitNumber}.`);
+    } catch (error) {
+        console.error("Error generating new rent records:", error);
+        showMessage(`Error generating new rent records: ${error.message}`, 'error');
+    }
+  };
+
   const handleLogout = async () => {
     if (auth) {
       try {
@@ -288,14 +381,14 @@ const App = () => {
 
   if (!userId || (auth.currentUser && auth.currentUser.isAnonymous)) {
     return (
-      <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency }}>
+      <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency, generateRentRecordsForUnit }}>
         <AuthScreen />
       </AppContext.Provider>
     );
   }
 
   return (
-    <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency }}>
+    <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency, generateRentRecordsForUnit }}>
       <div className="min-h-screen bg-gray-50 flex flex-col font-inter">
         <header className="bg-white shadow-md p-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-800">Rental Tracker</h1>
@@ -779,13 +872,10 @@ const Dashboard = () => {
 
 // --- Property & Unit Manager Component ---
 const PropertyManager = () => {
-  const { db, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency } = useContext(AppContext);
+  const { db, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency, generateRentRecordsForUnit } = useContext(AppContext);
   const [properties, setProperties] = useState([]);
   const [newPropertyName, setNewPropertyName] = useState('');
-  // Changed from newPropertyNotes to newPropertyAddress
   const [newPropertyAddress, setNewPropertyAddress] = useState('');
-  // Removed newPropertyImageUrl state
-  // const [newPropertyImageUrl, setNewPropertyImageUrl] = useState('');
   const [editingProperty, setEditingProperty] = useState(null);
 
   const [selectedPropertyForUnit, setSelectedPropertyForUnit] = useState(null);
@@ -814,9 +904,6 @@ const PropertyManager = () => {
   const [currentTenantHistory, setCurrentTenantHistory] = useState([]);
   const [currentUnitForHistory, setCurrentUnitForHistory] = useState(null);
   const [feedbackMessage, setFeedbackMessage] = useState('');
-
-  // Removed placeholderImage as it's no longer used
-  // const placeholderImage = "https://placehold.co/100x75/aabbcc/ffffff?text=No+Image";
 
   useEffect(() => {
     if (!db || !userId || !isAuthReady || !__app_id) return;
@@ -849,29 +936,20 @@ const PropertyManager = () => {
         const propertyDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties`, editingProperty.id);
         await updateDoc(propertyDocRef, {
           name: newPropertyName,
-          // Changed from notes to address
           address: newPropertyAddress,
-          // Removed imageUrl update
-          // imageUrl: newPropertyImageUrl,
         });
         setFeedbackMessage("Property updated successfully!");
       } else {
         const propertiesCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties`);
         await addDoc(propertiesCollectionRef, {
           name: newPropertyName,
-          // Changed from notes to address
           address: newPropertyAddress,
-          // Removed imageUrl from add
-          // imageUrl: newPropertyImageUrl,
           createdAt: new Date().toISOString(),
         });
         setFeedbackMessage("Property added successfully!");
       }
       setNewPropertyName('');
-      // Changed from setNewPropertyNotes to setNewPropertyAddress
       setNewPropertyAddress('');
-      // Removed setNewPropertyImageUrl
-      // setNewPropertyImageUrl('');
       setEditingProperty(null);
       setShowPropertyModal(false);
     } catch (e) {
@@ -883,10 +961,7 @@ const PropertyManager = () => {
   const openEditPropertyModal = (property) => {
     setEditingProperty(property);
     setNewPropertyName(property.name);
-    // Changed from setNewPropertyNotes to setNewPropertyAddress
-    setNewPropertyAddress(property.address || ''); // Use property.address
-    // Removed setNewPropertyImageUrl
-    // setNewPropertyImageUrl(property.imageUrl || '');
+    setNewPropertyAddress(property.address || '');
     setFeedbackMessage('');
     setShowPropertyModal(true);
   };
@@ -894,10 +969,7 @@ const PropertyManager = () => {
   const openAddPropertyModal = () => {
     setEditingProperty(null);
     setNewPropertyName('');
-    // Changed from setNewPropertyNotes to setNewPropertyAddress
     setNewPropertyAddress('');
-    // Removed setNewPropertyImageUrl
-    // setNewPropertyImageUrl('');
     setFeedbackMessage('');
     setShowPropertyModal(true);
   };
@@ -926,6 +998,9 @@ const PropertyManager = () => {
       return;
     }
 
+    // Store old moveInDate if editing for comparison
+    const oldMoveInDate = editingUnit ? editingUnit.moveInDate : null;
+
     setFeedbackMessage('');
     try {
       const unitData = {
@@ -948,18 +1023,37 @@ const PropertyManager = () => {
         rentIncrementEffectiveDate: newRentIncrementEffectiveDate || null,
       };
 
+      let unitIdToUse = editingUnit ? editingUnit.id : null;
+      let propertyIdToUse = selectedPropertyForUnit.id;
+      let successMessage = "";
+
       if (editingUnit) {
-        const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${selectedPropertyForUnit.id}/units`, editingUnit.id);
+        const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${propertyIdToUse}/units`, editingUnit.id);
         await updateDoc(unitDocRef, unitData);
-        setFeedbackMessage("Unit updated successfully!");
+        successMessage = "Unit updated successfully!";
       } else {
-        const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${selectedPropertyForUnit.id}/units`);
-        await addDoc(unitsCollectionRef, {
+        const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${propertyIdToUse}/units`);
+        const docRef = await addDoc(unitsCollectionRef, {
           ...unitData,
           createdAt: new Date().toISOString(),
         });
-        setFeedbackMessage("Unit added successfully!");
+        unitIdToUse = docRef.id; // Get the ID of the newly added unit
+        successMessage = "Unit added successfully!";
       }
+
+      // After unit is added/updated, handle rent records
+      const currentUnit = { ...unitData, id: unitIdToUse };
+      if (editingUnit && oldMoveInDate !== newMoveInDate) {
+          // If move-in date changed for an existing unit, regenerate
+          await generateRentRecordsForUnit(currentUnit, selectedPropertyForUnit);
+          successMessage += " Rent records regenerated.";
+      } else if (!editingUnit) {
+          // If it's a brand new unit, generate initial records
+          await generateRentRecordsForUnit(currentUnit, selectedPropertyForUnit);
+          successMessage += " Initial rent records generated.";
+      }
+      setFeedbackMessage(successMessage);
+
       setNewUnitNumber('');
       setNewTenantName('');
       setNewRentAmount('');
@@ -1035,14 +1129,30 @@ const PropertyManager = () => {
         const propertyDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties`, confirmDeleteModal.id);
         const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${confirmDeleteModal.id}/units`);
         const unitSnapshot = await getDocs(unitsCollectionRef);
-        const deleteUnitPromises = unitSnapshot.docs.map(unitDoc => deleteDoc(unitDoc.ref));
+        const deleteUnitPromises = unitSnapshot.docs.map(unitDoc => {
+            // Also delete associated rent records when deleting a unit
+            const unitIdToDelete = unitDoc.id;
+            const rentRecordsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`);
+            const unitRentQuery = query(rentRecordsCollectionRef, where("unitId", "==", unitIdToDelete));
+            getDocs(unitRentQuery).then(rentSnapshot => {
+                rentSnapshot.docs.forEach(rentDoc => deleteDoc(rentDoc.ref));
+            });
+            return deleteDoc(unitDoc.ref);
+        });
         await Promise.all(deleteUnitPromises);
         await deleteDoc(propertyDocRef);
         setFeedbackMessage("Property and its units deleted successfully!");
       } else if (confirmDeleteModal.type === 'unit') {
         const unitDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/properties/${confirmDeleteModal.propertyId}/units`, confirmDeleteModal.id);
+        // Delete associated rent records for the unit
+        const rentRecordsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`);
+        const unitRentQuery = query(rentRecordsCollectionRef, where("unitId", "==", confirmDeleteModal.id));
+        const rentSnapshot = await getDocs(unitRentQuery);
+        const deleteRentPromises = rentSnapshot.docs.map(rentDoc => deleteDoc(rentDoc.ref));
+        await Promise.all(deleteRentPromises);
+
         await deleteDoc(unitDocRef);
-        setFeedbackMessage("Unit deleted successfully!");
+        setFeedbackMessage("Unit and its rent records deleted successfully!");
       }
       setConfirmDeleteModal(null);
     } catch (e) {
@@ -1102,18 +1212,8 @@ const PropertyManager = () => {
             <div key={property.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-200">
                 <div className="flex items-center">
-                  {/* Removed Property Image URL display */}
-                  {/* {property.imageUrl && (
-                    <img
-                      src={property.imageUrl}
-                      alt={property.name}
-                      className="w-20 h-15 rounded-md object-cover mr-4"
-                      onError={(e) => { e.target.onerror = null; e.target.src = placeholderImage; }}
-                    />
-                  )} */}
                   <div>
                     <h3 className="text-2xl font-semibold text-gray-800">{property.name}</h3>
-                    {/* Changed from property.notes to property.address */}
                     {property.address && <p className="text-gray-600 text-sm italic">{property.address}</p>}
                   </div>
                 </div>
@@ -1218,27 +1318,11 @@ const PropertyManager = () => {
               placeholder="e.g., Main Street Apartments"
             />
           </div>
-          {/* Removed Property Image URL input */}
-          {/* <div>
-            <label htmlFor="propertyImageUrl" className="block text-sm font-medium text-gray-700">Property Image URL (Optional)</label>
-            <input
-              type="url"
-              id="propertyImageUrl"
-              value={newPropertyImageUrl}
-              onChange={(e) => setNewPropertyImageUrl(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., https://example.com/property.jpg"
-            />
-            <p className="mt-1 text-xs text-gray-500">Provide a direct URL to an image. No file uploads.</p>
-          </div> */}
           <div>
-            {/* Changed label from Notes (Optional) to Address */}
             <label htmlFor="propertyAddress" className="block text-sm font-medium text-gray-700">Address</label>
             <textarea
               id="propertyAddress"
-              // Changed from newPropertyNotes to newPropertyAddress
               value={newPropertyAddress}
-              // Changed from setNewPropertyNotes to setNewPropertyAddress
               onChange={(e) => setNewPropertyAddress(e.target.value)}
               rows="3"
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
@@ -1588,12 +1672,15 @@ const MonthlyRentTracker = () => {
   useEffect(() => {
     if (!db || !userId || !isAuthReady || properties.length === 0 || !__app_id) return;
 
-    const generateAndIncrementRecords = async () => {
+    const autoGenerateRentRecords = async () => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
       const currentMonth = today.getMonth() + 1;
       const currentYear = today.getFullYear();
+
+      const rentRecordsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/rentRecords`);
+      const generationPromises = [];
 
       for (const property of properties) {
         for (const unit of property.units) {
@@ -1634,52 +1721,45 @@ const MonthlyRentTracker = () => {
               const targetMonthYearString = `${year}-${String(month).padStart(2, '0')}`;
               const docId = `${unit.id}_${targetMonthYearString}`; // Unique ID for the rent record
 
-              const rentRecordsDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, docId);
-              const docSnap = await getDoc(rentRecordsDocRef); // Check if document exists
-
-              if (docSnap.exists()) {
-                // Document already exists, skip adding
-                continue;
-              }
-              
-              let currentUnitRent = parseFloat(unit.rentAmount || 0);
-              // (Rent increment logic can remain here)
-
               const lastDayOfTargetMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
               const finalRentDueDay = Math.min(rentDueDay, lastDayOfTargetMonth);
               const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
 
-              try {
-                await setDoc(rentRecordsDocRef, { // Use setDoc with explicit ID
+              generationPromises.push(
+                setDoc(doc(rentRecordsCollectionRef, docId), { // Use setDoc with explicit ID and merge:true
                   propertyId: property.id,
                   propertyName: property.name,
                   unitId: unit.id,
                   unitNumber: unit.number,
                   tenantName: unit.tenantName,
-                  amount: currentUnitRent,
+                  amount: parseFloat(unit.rentAmount || 0),
                   monthYear: targetMonthYearString,
-                  isPaid: false,
+                  isPaid: false, // Default to unpaid on auto-generation
                   dueDate: rentDueDate,
                   paymentDate: null,
                   amountReceived: 0,
                   isPartialPayment: false,
                   partialReason: '',
                   createdAt: new Date().toISOString(),
-                });
-              } catch (e) {
-                console.error("Error auto-generating rent record: ", e);
-              }
+                }, { merge: true }) // Merge to avoid overwriting existing payment status
+              );
             }
           }
         }
       }
+      try {
+        await Promise.all(generationPromises);
+        console.log(`Auto-generated/updated ${generationPromises.length} rent records.`);
+      } catch (e) {
+        console.error("Error auto-generating rent records: ", e);
+      }
     };
 
     if (properties.length > 0) {
-        generateAndIncrementRecords();
+        autoGenerateRentRecords();
     }
 
-  }, [db, userId, isAuthReady, properties, __app_id]); // Removed rentRecords from dependency array to prevent re-triggering on every rent record change
+  }, [db, userId, isAuthReady, properties, __app_id]);
 
   const filteredRentRecords = useMemo(() => {
     return rentRecords.filter(record => {
@@ -2169,7 +2249,6 @@ const MonthlyRentTracker = () => {
         )}
       </div>
 
-      {/* --- ADDED MODALS --- */}
       <Modal isOpen={showEditRentPaymentModal} title={`Edit Payment for ${currentRentRecordToEdit?.tenantName}`} onClose={() => setShowEditRentPaymentModal(false)}>
         <div className="space-y-4">
           <div>
@@ -3426,14 +3505,11 @@ const ExportSystem = () => {
     const allUnits = properties.flatMap(prop => prop.units.map(unit => ({
       ...unit,
       propertyName: prop.name,
-      // Removed propertyImageUrl from export
-      // propertyImageUrl: prop.imageUrl || '',
-      // Changed propertyNotes to propertyAddress for export
       propertyAddress: prop.address || '',
     })));
 
     const headers = [
-      'id', 'propertyId', 'propertyName', /* Removed 'propertyImageUrl' */ 'propertyAddress',
+      'id', 'propertyId', 'propertyName', 'propertyAddress',
       'number', 'tenantName', 'rentAmount', 'moveInDate', 'notes',
       'phoneNumber', 'email', 'emergencyContactName', 'emergencyContactPhone',
       'leaseStartDate', 'leaseEndDate', 'securityDepositAmount', 'leaseTerm',
@@ -3503,7 +3579,7 @@ const ExportSystem = () => {
             <span className="font-semibold">Expense Data Fields:</span> ID, Date, Property ID, Property Name, Unit ID, Unit Number, Amount, Reason, Category, Notes, Created At.
           </p>
           <p>
-            <span className="font-semibold">Properties & Units Data Fields:</span> ID, Property ID, Property Name, Property Image URL, Property Notes, Unit Number, Tenant Name, Rent Amount, Move-in Date, Unit Notes, Phone Number, Email, Emergency Contact Name, Emergency Contact Phone, Lease Start Date, Lease End Date, Security Deposit Amount, Lease Term, Rent Increment Amount, Rent Increment Effective Date, Created At.
+            <span className="font-semibold">Properties & Units Data Fields:</span> ID, Property ID, Property Name, Property Address, Unit Number, Tenant Name, Rent Amount, Move-in Date, Unit Notes, Phone Number, Email, Emergency Contact Name, Emergency Contact Phone, Lease Start Date, Lease End Date, Security Deposit Amount, Lease Term, Rent Increment Amount, Rent Increment Effective Date, Created At.
           </p>
           <p>
             <span className="font-semibold">Task Data Fields:</span> ID, Description, Due Date, Property ID, Property Name, Unit ID, Unit Number, Status, Notes, Created At.
