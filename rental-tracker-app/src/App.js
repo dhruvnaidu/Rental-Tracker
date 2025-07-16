@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, setDoc } from 'firebase/firestore'; // Removed getDoc
+import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, setDoc, getDoc } from 'firebase/firestore';
 import {
   Home,
   Building,
@@ -39,9 +39,9 @@ const formatDate = (dateString) => {
   if (!dateString) return '-';
   // Appending 'T00:00:00' explicitly tells the browser to parse the string as local time at midnight
   const date = new Date(dateString + 'T00:00:00');
-  return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  if (isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 };
-
 
 // Utility function to format date for HTML date input (YYYY-MM-DD)
 const formatDateForInput = (dateString) => {
@@ -56,6 +56,7 @@ const formatDateForInput = (dateString) => {
 
 // Utility function to format currency
 const formatCurrency = (amount) => {
+  // Ensure amount is a number, default to 0 if not
   const numericAmount = typeof amount === 'number' ? amount : parseFloat(amount) || 0;
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'INR' }).format(numericAmount);
 };
@@ -227,6 +228,7 @@ const App = () => {
     setMessageBox({ message, type });
   };
 
+  // Your web app's Firebase configuration
   const firebaseConfig = useMemo(() => ({
     apiKey: "AIzaSyAQJm88i3gwaGzvhJMxONzUr78tZqBRfXs",
     authDomain: "rentaltrackerapp.firebaseapp.com",
@@ -239,6 +241,7 @@ const App = () => {
 
   const __app_id = firebaseConfig.projectId;
 
+// Firebase Initialization and Authentication
   useEffect(() => {
     try {
       const app = initializeApp(firebaseConfig);
@@ -309,7 +312,7 @@ const App = () => {
     const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
 
-    const rentGenerationPromises = [];
+    const generationPromises = [];
 
     for (let year = moveInYear; year <= currentYear; year++) {
         const loopStartMonth = (year === moveInYear) ? moveInMonth : 1;
@@ -328,29 +331,65 @@ const App = () => {
             const finalRentDueDay = Math.min(moveInDay, lastDayOfTargetMonth);
             const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
 
-            rentGenerationPromises.push(
-                setDoc(doc(rentRecordsCollectionRef, docId), {
-                    propertyId: propertyData.id,
-                    propertyName: propertyData.name,
-                    unitId: unitData.id,
-                    unitNumber: unitData.number,
-                    tenantName: unitData.tenantName,
-                    amount: parseFloat(unitData.rentAmount || 0),
-                    monthYear: targetMonthYearString,
-                    isPaid: false, // Default to unpaid on generation
-                    dueDate: rentDueDate,
-                    paymentDate: null,
-                    amountReceived: 0,
-                    isPartialPayment: false,
-                    partialReason: '',
-                    createdAt: new Date().toISOString(),
-                }, { merge: true }) // Use merge: true to avoid overwriting existing payment status if it was already updated manually
+            generationPromises.push(
+                (async () => {
+                    const docRef = doc(rentRecordsCollectionRef, docId);
+                    const existingDoc = await getDoc(docRef); // Fetch existing document
+
+                    let rentRecordData = {
+                        propertyId: propertyData.id,
+                        propertyName: propertyData.name,
+                        unitId: unitData.id,
+                        unitNumber: unitData.number,
+                        tenantName: unitData.tenantName,
+                        amount: parseFloat(unitData.rentAmount || 0),
+                        monthYear: targetMonthYearString,
+                        dueDate: rentDueDate,
+                        createdAt: new Date().toISOString(),
+                    };
+
+                    if (existingDoc.exists()) {
+                        const existingData = existingDoc.data();
+                        // Preserve payment status if already paid
+                        if (existingData.isPaid) {
+                            rentRecordData = {
+                                ...rentRecordData,
+                                isPaid: existingData.isPaid,
+                                paymentDate: existingData.paymentDate,
+                                amountReceived: existingData.amountReceived,
+                                isPartialPayment: existingData.isPartialPayment,
+                                partialReason: existingData.partialReason,
+                            };
+                        } else {
+                            // If not paid, or new, default to unpaid
+                            rentRecordData = {
+                                ...rentRecordData,
+                                isPaid: false,
+                                paymentDate: null,
+                                amountReceived: 0,
+                                isPartialPayment: false,
+                                partialReason: '',
+                            };
+                        }
+                    } else {
+                        // New record, default to unpaid
+                        rentRecordData = {
+                            ...rentRecordData,
+                            isPaid: false,
+                            paymentDate: null,
+                            amountReceived: 0,
+                            isPartialPayment: false,
+                            partialReason: '',
+                        };
+                    }
+                    await setDoc(docRef, rentRecordData); // No merge needed if we explicitly construct the data
+                })()
             );
         }
     }
     try {
-        await Promise.all(rentGenerationPromises);
-        console.log(`Generated/updated ${rentGenerationPromises.length} rent records for unit ${unitData.unitNumber}.`);
+        await Promise.all(generationPromises);
+        console.log(`Generated/updated ${generationPromises.length} rent records for unit ${unitData.unitNumber}.`);
     } catch (error) {
         console.error("Error generating new rent records:", error);
         showMessage(`Error generating new rent records: ${error.message}`, 'error');
@@ -379,6 +418,7 @@ const App = () => {
     );
   }
 
+  // If user is not logged in (or is anonymous), show AuthScreen
   if (!userId || (auth.currentUser && auth.currentUser.isAnonymous)) {
     return (
       <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency, generateRentRecordsForUnit }}>
@@ -390,6 +430,7 @@ const App = () => {
   return (
     <AppContext.Provider value={{ db, auth, userId, isAuthReady, __app_id, formatDate, formatDateForInput, formatCurrency, generateRentRecordsForUnit }}>
       <div className="min-h-screen bg-gray-50 flex flex-col font-inter">
+        {/* Header */}
         <header className="bg-white shadow-md p-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-800">Rental Tracker</h1>
           <div className="flex items-center">
@@ -407,7 +448,10 @@ const App = () => {
             </button>
           </div>
         </header>
+
+        {/* Main Content Area */}
         <div className="flex flex-1">
+          {/* Sidebar Navigation */}
           <nav className="w-64 bg-gray-800 text-white p-4 shadow-lg">
             <ul className="space-y-2">
               <li>
@@ -469,6 +513,7 @@ const App = () => {
             </ul>
           </nav>
 
+          {/* Content Area */}
           <main className="flex-1 p-6 bg-gray-50 overflow-auto">
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'properties' && <PropertyManager />}
@@ -513,7 +558,7 @@ const Dashboard = () => {
         const propertyData = { id: doc.id, ...doc.data(), units: [] };
         const unitsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/properties/${doc.id}/units`);
         const unitSnapshot = await getDocs(unitsCollectionRef);
-        propertyData.units = unitSnapshot.docs.map(unitDoc => ({ id: unitDoc.id, ...unitDoc.data() }));
+        propertyData.units = unitSnapshot.docs.map(unitDoc => ({ id: unitDoc.id, ...unitDoc.id, ...unitDoc.data() }));
         fetchedProperties.push(propertyData);
       }
       setProperties(fetchedProperties);
@@ -608,7 +653,7 @@ const Dashboard = () => {
       monthlyData[key].net = monthlyData[key].rent - monthlyData[key].expenses;
     });
 
-    return Object.keys(monthlyData)
+    return Object.values(monthlyData)
       .sort()
       .map(key => monthlyData[key])
       .filter(item => item !== undefined && item !== null);
@@ -1659,7 +1704,9 @@ const MonthlyRentTracker = () => {
     }, (error) => console.error("Error fetching properties for rent tracker:", error));
 
     const unsubscribeRentRecords = onSnapshot(userRentRecordsCollectionRef, (snapshot) => {
-      setRentRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const fetchedRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRentRecords(fetchedRecords);
+      console.log("Firestore onSnapshot: rentRecords updated. Total:", fetchedRecords.length, "Records:", fetchedRecords);
     }, (error) => console.error("Error fetching rent records:", error));
 
     return () => {
@@ -1709,10 +1756,10 @@ const MonthlyRentTracker = () => {
           const startMonthForGeneration = moveInDateObj.getMonth() + 1;
 
           for (let year = startYearForGeneration; year <= currentYear; year++) {
-            const loopStartMonth = (year === startYearForGeneration) ? startMonthForGeneration : 1;
-            const loopEndMonth = (year === currentYear) ? currentMonth : 12;
+            let monthToStart = (year === startYearForGeneration) ? startMonthForGeneration : 1;
+            let monthToEnd = (year === currentYear) ? currentMonth : 12;
 
-            for (let month = loopStartMonth; month <= loopEndMonth; month++) {
+            for (let month = monthToStart; month <= monthToEnd; month++) {
               const targetDate = new Date(year, month - 1, rentDueDay);
               if (targetDate > today) {
                 continue;
@@ -1726,22 +1773,58 @@ const MonthlyRentTracker = () => {
               const rentDueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), finalRentDueDay).toISOString().slice(0, 10);
 
               generationPromises.push(
-                setDoc(doc(rentRecordsCollectionRef, docId), { // Use setDoc with explicit ID and merge:true
-                  propertyId: property.id,
-                  propertyName: property.name,
-                  unitId: unit.id,
-                  unitNumber: unit.number,
-                  tenantName: unit.tenantName,
-                  amount: parseFloat(unit.rentAmount || 0),
-                  monthYear: targetMonthYearString,
-                  isPaid: false, // Default to unpaid on auto-generation
-                  dueDate: rentDueDate,
-                  paymentDate: null,
-                  amountReceived: 0,
-                  isPartialPayment: false,
-                  partialReason: '',
-                  createdAt: new Date().toISOString(),
-                }, { merge: true }) // Merge to avoid overwriting existing payment status
+                (async () => {
+                    const docRef = doc(rentRecordsCollectionRef, docId);
+                    const existingDoc = await getDoc(docRef); // Fetch existing document
+
+                    let rentRecordData = {
+                        propertyId: property.id,
+                        propertyName: property.name,
+                        unitId: unit.id,
+                        unitNumber: unit.number,
+                        tenantName: unit.tenantName,
+                        amount: parseFloat(unit.rentAmount || 0),
+                        monthYear: targetMonthYearString,
+                        dueDate: rentDueDate,
+                        createdAt: new Date().toISOString(),
+                    };
+
+                    if (existingDoc.exists()) {
+                        const existingData = existingDoc.data();
+                        // Preserve payment status if already paid
+                        if (existingData.isPaid) {
+                            rentRecordData = {
+                                ...rentRecordData,
+                                isPaid: existingData.isPaid,
+                                paymentDate: existingData.paymentDate,
+                                amountReceived: existingData.amountReceived,
+                                isPartialPayment: existingData.isPartialPayment,
+                                partialReason: existingData.partialReason,
+                            };
+                        } else {
+                            // If not paid, or new, default to unpaid
+                            rentRecordData = {
+                                ...rentRecordData,
+                                isPaid: false,
+                                paymentDate: null,
+                                amountReceived: 0,
+                                isPartialPayment: false,
+                                partialReason: '',
+                            };
+                        }
+                    } else {
+                        // New record, default to unpaid
+                        rentRecordData = {
+                            ...rentRecordData,
+                            isPaid: false,
+                            paymentDate: null,
+                            amountReceived: 0,
+                            isPartialPayment: false,
+                            partialReason: '',
+                        };
+                    }
+                    await setDoc(docRef, rentRecordData);
+                })()
               );
             }
           }
@@ -1759,7 +1842,9 @@ const MonthlyRentTracker = () => {
         autoGenerateRentRecords();
     }
 
-  }, [db, userId, isAuthReady, properties, __app_id]);
+  },
+  [db, userId, isAuthReady, properties, __app_id]); // Added a blank line above this for clarity and parsing help
+
 
   const filteredRentRecords = useMemo(() => {
     return rentRecords.filter(record => {
@@ -1781,6 +1866,9 @@ const MonthlyRentTracker = () => {
     today.setHours(0, 0, 0, 0);
 
     return rentRecords.filter(record => {
+      // Primary filter: if it's marked as paid, it's not in arrears.
+      if (record.isPaid) return false;
+
       const unit = properties.flatMap(p => p.units).find(u => u.id === record.unitId);
       if (!unit || !unit.moveInDate) {
         return false;
@@ -1809,12 +1897,30 @@ const MonthlyRentTracker = () => {
       }
 
       const amountRemaining = (record.amount || 0) - (record.amountReceived || 0);
-      if (amountRemaining <= 0) return false;
+      
+      // Log for debugging arrears
+      if (amountRemaining > 0) { // Only log if there's an amount remaining
+        const dueDate = record.dueDate ? new Date(record.dueDate + 'T00:00:00') : new Date(record.monthYear + '-01T00:00:00');
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate < today) { // Only log if it's overdue
+          console.log("Arrears candidate:", {
+            id: record.id,
+            amount: record.amount,
+            amountReceived: record.amountReceived,
+            isPaid: record.isPaid,
+            amountRemaining: amountRemaining,
+            dueDate: record.dueDate,
+            today: today.toISOString().slice(0, 10),
+            reason: record.partialReason
+          });
+        }
+      }
 
+      // If it's not paid, and there's an amount remaining, and it's overdue
       const dueDate = record.dueDate ? new Date(record.dueDate + 'T00:00:00') : new Date(record.monthYear + '-01T00:00:00');
       dueDate.setHours(0, 0, 0, 0);
 
-      return dueDate < today;
+      return amountRemaining > 0 && dueDate < today;
     }).map(record => {
       const dueDate = record.dueDate ? new Date(record.dueDate + 'T00:00:00') : new Date(record.monthYear + '-01T00:00:00');
       dueDate.setHours(0, 0, 0, 0);
@@ -1828,7 +1934,8 @@ const MonthlyRentTracker = () => {
     setCurrentRentRecordToEdit(record);
     setEditPaymentDate(record.paymentDate ? formatDateForInput(record.paymentDate) : new Date().toISOString().slice(0, 10));
     setEditAmountReceived(record.amountReceived || record.amount || '');
-    setEditIsFullPayment((record.amountReceived || 0) >= (record.amount || 0));
+    // Set editIsFullPayment based on whether amount received equals amount due
+    setEditIsFullPayment(parseFloat(record.amountReceived || 0) >= parseFloat(record.amount || 0));
     setEditPartialReason(record.partialReason || '');
     setFeedbackMessage('');
     setShowEditRentPaymentModal(true);
@@ -1837,7 +1944,7 @@ const MonthlyRentTracker = () => {
   const handleUpdateRentPayment = async () => {
     if (!db || !userId || !isAuthReady || !__app_id || !currentRentRecordToEdit) return;
 
-    const expectedAmount = currentRentRecordToEdit.amount;
+    const expectedAmount = parseFloat(currentRentRecordToEdit.amount || 0);
     let finalAmountReceived = parseFloat(editAmountReceived);
     let finalIsPaid = false;
     let finalPartialReason = editPartialReason.trim();
@@ -1847,20 +1954,25 @@ const MonthlyRentTracker = () => {
       return;
     }
 
-    if (finalAmountReceived >= expectedAmount) {
+    if (editIsFullPayment || finalAmountReceived >= expectedAmount) {
       finalIsPaid = true;
       finalPartialReason = '';
-      finalAmountReceived = expectedAmount;
-    } else {
+      finalAmountReceived = expectedAmount; // Ensure full amount is recorded if marked as full payment
+    } else { // Partial payment
       finalIsPaid = false;
       if (!finalPartialReason) {
         setFeedbackMessage("Error: Reason for difference is required for partial payments.");
         return;
       }
-      if (finalPartialReason.toLowerCase() === 'maintenance') {
-        finalIsPaid = true;
+
+      if (finalPartialReason === 'Maintenance') {
         const maintenanceAmount = expectedAmount - finalAmountReceived;
-        finalAmountReceived = expectedAmount;
+        if (maintenanceAmount < 0) {
+          setFeedbackMessage("Error: Maintenance deduction cannot result in overpayment. Adjust amount received.");
+          return;
+        }
+        finalIsPaid = true; // Mark as paid because the difference is accounted for by expense
+        finalAmountReceived = expectedAmount; // Record full expected amount as received
         finalPartialReason = 'Maintenance deduction';
 
         try {
@@ -1871,9 +1983,9 @@ const MonthlyRentTracker = () => {
             unitId: currentRentRecordToEdit.unitId,
             unitNumber: currentRentRecordToEdit.unitNumber,
             amount: maintenanceAmount,
-            reason: `Maintenance deduction from rent for Unit ${currentRentRecordToEdit.unitNumber}`,
+            reason: `Maintenance deduction for Unit ${currentRentRecordToEdit.unitNumber} (${currentRentRecordToEdit.tenantName}) - ${currentRentRecordToEdit.monthYear} rent`,
             category: 'Maintenance',
-            notes: `Original rent: ${formatCurrency(expectedAmount)}, Received: ${formatCurrency(editAmountReceived)}. Maintenance cost: ${formatCurrency(maintenanceAmount)}`,
+            notes: `Original rent: ${expectedAmount}, Received: ${editAmountReceived}. Maintenance cost: ${maintenanceAmount}.`,
             createdAt: new Date().toISOString(),
           });
           setFeedbackMessage("Rent record updated and Maintenance expense added!");
@@ -1885,14 +1997,25 @@ const MonthlyRentTracker = () => {
       }
     }
 
+    console.log("Updating rent payment (values to be saved):", {
+      recordId: currentRentRecordToEdit.id,
+      expectedAmount: expectedAmount,
+      inputAmountReceived: editAmountReceived,
+      finalAmountReceived: finalAmountReceived,
+      finalIsPaid: finalIsPaid,
+      finalPartialReason: finalPartialReason,
+      paymentDate: finalIsPaid ? editPaymentDate : null,
+    });
+
+
     setFeedbackMessage('');
     try {
       const recordDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, currentRentRecordToEdit.id);
       await updateDoc(recordDocRef, {
         isPaid: finalIsPaid,
-        paymentDate: editPaymentDate,
+        paymentDate: finalIsPaid ? editPaymentDate : null, // Set paymentDate only if paid
         amountReceived: finalAmountReceived,
-        isPartialPayment: !finalIsPaid,
+        isPartialPayment: !finalIsPaid, // If finalIsPaid is true, then it's not a partial payment
         partialReason: finalPartialReason,
       });
       setFeedbackMessage("Rent record updated successfully!");
@@ -2011,6 +2134,11 @@ const MonthlyRentTracker = () => {
     { value: 7, label: 'July' }, { value: 8, label: 'August' }, { value: 9, label: 'September' },
     { value: 10, label: 'October' }, { value: 11, label: 'November' }, { value: 12, label: 'December' },
   ];
+
+  const expectedAmount = currentRentRecordToEdit ? parseFloat(currentRentRecordToEdit.amount || 0) : 0;
+  const currentAmountReceived = parseFloat(editAmountReceived || 0);
+  const difference = expectedAmount - currentAmountReceived;
+
 
   return (
     <div className="space-y-6">
@@ -2251,24 +2379,59 @@ const MonthlyRentTracker = () => {
 
       <Modal isOpen={showEditRentPaymentModal} title={`Edit Payment for ${currentRentRecordToEdit?.tenantName}`} onClose={() => setShowEditRentPaymentModal(false)}>
         <div className="space-y-4">
+          <div className="flex justify-between items-center text-lg font-semibold text-gray-800">
+            <span>Amount Due:</span>
+            <span>{formatCurrency(expectedAmount)}</span>
+          </div>
           <div>
             <label htmlFor="editPaymentDate" className="block text-sm font-medium text-gray-700">Payment Date</label>
             <input type="date" id="editPaymentDate" value={editPaymentDate} onChange={(e) => setEditPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"/>
           </div>
           <div>
             <label htmlFor="editAmountReceived" className="block text-sm font-medium text-gray-700">Amount Received</label>
-            <input type="number" id="editAmountReceived" value={editAmountReceived} onChange={(e) => setEditAmountReceived(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" />
+            <input
+              type="number"
+              id="editAmountReceived"
+              value={editAmountReceived}
+              onChange={(e) => {
+                setEditAmountReceived(e.target.value);
+                // Automatically set to full payment if received amount is >= expected
+                setEditIsFullPayment(parseFloat(e.target.value || 0) >= expectedAmount);
+              }}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
+              step="0.01"
+              min="0"
+            />
           </div>
-          <div>
-            <label className="flex items-center">
-              <input type="checkbox" checked={!editIsFullPayment} onChange={(e) => setEditIsFullPayment(!e.target.checked)} className="form-checkbox h-5 w-5 text-blue-600"/>
-              <span className="ml-2 text-sm text-gray-700">Is this a partial payment?</span>
-            </label>
+
+          <div className="flex justify-between items-center text-base font-medium">
+            <span>Difference:</span>
+            <span className={difference > 0 ? 'text-red-600' : 'text-green-600'}>
+              {formatCurrency(difference)}
+            </span>
           </div>
-          {!editIsFullPayment && (
+
+          {editIsFullPayment ? (
+            <div className="text-green-700 font-semibold">Full Amount Paid</div>
+          ) : (
             <div>
               <label htmlFor="editPartialReason" className="block text-sm font-medium text-gray-700">Reason for Difference</label>
-              <input type="text" id="editPartialReason" value={editPartialReason} onChange={(e) => setEditPartialReason(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"/>
+              <select
+                id="editPartialReason"
+                value={editPartialReason}
+                onChange={(e) => setEditPartialReason(e.target.value)}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              >
+                <option value="">Select a reason</option>
+                <option value="Late Payment">Late Payment</option>
+                <option value="Partial Payment">Partial Payment</option>
+                <option value="Maintenance">Maintenance</option>
+              </select>
+              {editPartialReason === 'Maintenance' && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Select "Maintenance" if the difference is due to maintenance work; it will be logged as an expense.
+                </p>
+              )}
             </div>
           )}
           <div className="flex justify-end space-x-3">
@@ -2280,7 +2443,7 @@ const MonthlyRentTracker = () => {
 
       <Modal isOpen={!!confirmDeleteRentModal} title="Confirm Delete Rent Record" onClose={() => setConfirmDeleteRentModal(null)}>
         <div className="space-y-4">
-          <p>Are you sure you want to delete the rent record for <strong>{confirmDeleteRentModal?.tenantName}</strong> for <strong>{confirmDeleteRentModal?.monthYear}</strong>?</p>
+          <p>Are you sure you want to delete <strong>{confirmDeleteRentModal?.tenantName}</strong> for <strong>{confirmDeleteRentModal?.monthYear}</strong>?</p>
           <div className="flex justify-end space-x-3">
             <button onClick={() => setConfirmDeleteRentModal(null)} className="px-4 py-2 border rounded-md">Cancel</button>
             <button onClick={handleDeleteRentRecord} className="px-4 py-2 bg-red-600 text-white rounded-md">Delete</button>
@@ -2290,10 +2453,22 @@ const MonthlyRentTracker = () => {
 
       <Modal isOpen={confirmBulkDeleteArrearsModal} title="Confirm Bulk Delete" onClose={() => setConfirmBulkDeleteArrearsModal(false)}>
         <div className="space-y-4">
-          <p>Are you sure you want to delete the selected <strong>{selectedArrearsRecords.length}</strong> arrears records? This action cannot be undone.</p>
+          <p className="text-gray-700">
+            Are you sure you want to delete <span className="font-semibold">{selectedArrearsRecords.length}</span> selected arrears records? This action cannot be undone.
+          </p>
           <div className="flex justify-end space-x-3">
-            <button onClick={() => setConfirmBulkDeleteArrearsModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
-            <button onClick={handleBulkDeleteArrearsRecords} className="px-4 py-2 bg-red-600 text-white rounded-md">Delete Records</button>
+            <button
+              onClick={() => setConfirmBulkDeleteArrearsModal(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkDeleteArrearsRecords}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200"
+            >
+              Delete Selected
+            </button>
           </div>
         </div>
       </Modal>
@@ -2994,7 +3169,7 @@ const TaskManager = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold text-gray-800 mb-6">TaskManager</h2>
+      <h2 className="text-3xl font-bold text-gray-800 mb-6">Task Manager</h2>
 
       {feedbackMessage && (
         <div className={`p-3 rounded-md ${feedbackMessage.startsWith('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'} transition-all duration-300`}>
