@@ -3177,7 +3177,7 @@ const App = () => {
                   id="expenseUnit"
                   value={newExpenseUnitId}
                   onChange={(e) => {
-                    const selectedUnit = getUnitsForProperty(newExpensePropertyId).find(unit => unit.id === e.target.value);
+                    // Removed the unused 'selectedUnit' assignment here
                     setNewExpenseUnitId(e.target.value);
                   }}
                   className="select select-bordered w-full"
@@ -3833,27 +3833,34 @@ const App = () => {
         <div className="alert alert-warning shadow-lg">
           <Info size={24} />
           <div>
-            <h3 className="font-bold">Important Note on Email Reminders:</h3>
+            <h3 className="font-bold">Important Note on Email Reminders & SMTP:</h3>
             {/* Adjusted text size for readability */}
             <div className="text-base">
-              Direct email sending from a client-side web application is **not secure or practical**.
-              To enable automated email reminders, you would typically need a separate **backend service**
-              (e.g., using Node.js, Python, or Firebase Cloud Functions) that runs independently.
-              This script would then be triggered by your operating system's Task Scheduler (Windows) or Cron Jobs (macOS/Linux),
+              Direct email sending from a client-side web application (like this React app) is **not secure or practical**.
+              To enable automated email reminders using SMTP (like Mailgun), you would typically need a separate **backend service**
+              (e.g., using Node.js with Nodemailer, Python with `smtplib`, or Firebase Cloud Functions) that runs independently.
+              This backend script would then be triggered by your operating system's Task Scheduler (Windows) or Cron Jobs (macOS/Linux),
               or by a cloud service.
               <br/><br/>
               The **backend script** would be responsible for:
               <ul className="list-disc list-inside ml-4 mt-2">
-                  <li>Reading your configured email settings (sender, recipient, app password).</li>
+                  <li>Connecting to the SMTP server using the provided credentials. For Mailgun, these are:
+                      <ul className="list-circle list-inside ml-4">
+                          <li>**SMTP Hostname:** `smtp.mailgun.org`</li>
+                          <li>**Port:** `587` (or `465` for SSL)</li>
+                          <li>**Username:** (Your Mailgun SMTP Login, e.g., `postmaster@YOUR_DOMAIN_NAME`)</li>
+                          <li>**Password:** (Your Mailgun SMTP Password, e.g., `3kh9umujora5` - **replace with your actual password**)</li>
+                      </ul>
+                  </li>
                   <li>Querying your Firestore database for rent records where `isPaid` is `false` for the current month.</li>
                   <li>Composing and sending emails only for the unpaid records.</li>
               </ul>
               <br/>
               This application provides the UI for you to **configure** these email settings, but the actual email sending mechanism
-              needs to be implemented **externally**.
+              needs to be implemented **externally** using a server-side language and an SMTP library.
               <br/><br/>
               If you choose to implement email sending, consider using <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer" className="link link-hover text-warning-content">Google App Passwords</a>
-              instead of your main Gmail password for security.
+              instead of your main Gmail password for security if you're using a Gmail sender. For Mailgun, use the SMTP credentials they provide.
             </div>
           </div>
         </div>
