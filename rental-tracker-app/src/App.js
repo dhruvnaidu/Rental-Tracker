@@ -125,7 +125,7 @@ const AuthScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [error, setError] = useState('');
+  // const [error, setError] = useState(''); // Removed unused error state
   const [isLoading, setIsLoading] = useState(false);
   const [messageBox, setMessageBox] = useState(null);
   const [showPassword, setShowPassword] = useState(false); // New state for password visibility
@@ -135,7 +135,7 @@ const AuthScreen = () => {
   };
 
   const handleAuthAction = async () => {
-    setError('');
+    // setError(''); // Removed unused setError
     setMessageBox(null); // Clear previous messages
     setIsLoading(true);
     try {
@@ -148,7 +148,7 @@ const AuthScreen = () => {
       }
     } catch (e) {
       console.error("Auth Error:", e.message);
-      setError(e.message);
+      // setError(e.message); // Removed unused setError
       showMessage(e.message, 'error');
     } finally {
       setIsLoading(false);
@@ -628,60 +628,60 @@ const App = () => {
           <nav className="w-64 bg-base-300 text-base-content p-4 shadow-lg">
             <ul className="menu p-2 w-full space-y-2">
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('dashboard')}
                   className={activeTab === 'dashboard' ? 'active' : ''}
                 >
                   <Home size={20} /> Dashboard
-                </a>
+                </button>
               </li>
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('properties')}
                   className={activeTab === 'properties' ? 'active' : ''}
                 >
                   <Building size={20} /> Properties & Units
-                </a>
+                </button>
               </li>
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('rent')}
                   className={activeTab === 'rent' ? 'active' : ''}
                 >
                   <DollarSign size={20} /> Monthly Rent Tracker
-                </a>
+                </button>
               </li>
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('expenses')}
                   className={activeTab === 'expenses' ? 'active' : ''}
                 >
                   <Receipt size={20} /> Expense Logger
-                </a>
+                </button>
               </li>
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('tasks')}
                   className={activeTab === 'tasks' ? 'active' : ''}
                 >
                   <ListTodo size={20} /> Task Manager
-                </a>
+                </button>
               </li>
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('reminders')}
                   className={activeTab === 'reminders' ? 'active' : ''}
                 >
                   <Bell size={20} /> Reminders
-                </a>
+                </button>
               </li>
               <li>
-                <a
+                <button
                   onClick={() => setActiveTab('export')}
                   className={activeTab === 'export' ? 'active' : ''}
                 >
                   <Download size={20} /> Export Data
-                </a>
+                </button>
               </li>
             </ul>
           </nav>
@@ -1316,8 +1316,7 @@ const PropertyManager = () => {
       return;
     }
 
-    // Store old moveInDate if editing for comparison
-    const oldMoveInDate = editingUnit ? editingUnit.moveInDate : null;
+    // const oldMoveInDate = editingUnit ? editingUnit.moveInDate : null; // Removed unused variable
 
     setFeedbackMessage('');
 
@@ -1355,7 +1354,7 @@ const PropertyManager = () => {
     }
 
     try {
-      let unitIdToUse = editingUnit ? editingUnit.id : null;
+      // let unitIdToUse = editingUnit ? editingUnit.id : null; // Removed unused variable
       let propertyIdToUse = selectedPropertyForUnit.id;
       let actualUnitDataSaved = { ...unitData }; // This will hold the data actually saved to Firestore
 
@@ -1369,7 +1368,7 @@ const PropertyManager = () => {
           ...unitData,
           createdAt: new Date().toISOString(),
         });
-        unitIdToUse = docRef.id;
+        // unitIdToUse = docRef.id; // Removed unused variable
         actualUnitDataSaved = { ...unitData, id: docRef.id };
       }
 
@@ -2062,10 +2061,10 @@ const MonthlyRentTracker = () => {
           }
 
           const moveInYear = parseInt(moveInDateParts[0], 10);
-          const moveInMonth = parseInt(moveInDateParts[1], 10); // 1-indexed month
+          const moveInMonth = parseInt(moveInDateParts[1], 10) - 1;
           const moveInDay = parseInt(moveInDateParts[2], 10);
           
-          const moveInDateObj = new Date(moveInYear, moveInMonth - 1, moveInDay);
+          const moveInDateObj = new Date(moveInYear, moveInMonth, moveInDay);
           if (isNaN(moveInDateObj.getTime())) {
             console.warn(`Invalid moveInDate for unit ${unit.id}: ${unit.moveInDate}. Skipping rent generation.`);
             continue;
@@ -2843,7 +2842,7 @@ const ExpenseLogger = () => {
   const [newExpenseDate, setNewExpenseDate] = useState(new Date().toISOString().slice(0, 10));
   const [newExpensePropertyId, setNewExpensePropertyId] = useState('');
   const [newExpenseUnitId, setNewExpenseUnitId] = useState('');
-  const [newExpenseUnitNumber, setNewExpenseUnitNumber] = useState('');
+  // const [newExpenseUnitNumber, setNewExpenseUnitNumber] = useState(''); // Removed unused state
   const [newExpenseAmount, setNewExpenseAmount] = useState('');
   const [newExpenseReason, setNewExpenseReason] = useState('');
   const [newExpenseCategory, setNewExpenseCategory] = useState('');
@@ -2909,7 +2908,9 @@ const ExpenseLogger = () => {
       return;
     }
 
-    if (newExpensePropertyId && newExpenseUnitId && !getUnitsForProperty(newExpensePropertyId).some(u => u.id === newExpenseUnitId)) {
+    const selectedUnit = newExpenseUnitId ? getUnitsForProperty(newExpensePropertyId).find(u => u.id === newExpenseUnitId) : null;
+
+    if (newExpensePropertyId && newExpenseUnitId && !selectedUnit) {
       setFeedbackMessage("Selected unit does not belong to the selected property.");
       return;
     }
@@ -2922,7 +2923,7 @@ const ExpenseLogger = () => {
         propertyId: newExpensePropertyId,
         propertyName: selectedProperty.name,
         unitId: newExpenseUnitId || null, // Allow null for property-level expenses
-        unitNumber: newExpenseUnitId ? getUnitsForProperty(newExpensePropertyId).find(u => u.id === newExpenseUnitId)?.number : null, // Get unit number if unitId is present
+        unitNumber: selectedUnit?.number || null, // Get unit number if unitId is present
         amount: parseFloat(newExpenseAmount),
         reason: newExpenseReason,
         category: newExpenseCategory,
@@ -2944,7 +2945,7 @@ const ExpenseLogger = () => {
       setNewExpenseDate(new Date().toISOString().slice(0, 10));
       setNewExpensePropertyId(properties.length > 0 ? properties[0].id : ''); // Reset to first property or empty
       setNewExpenseUnitId('');
-      setNewExpenseUnitNumber('');
+      // setNewExpenseUnitNumber(''); // Removed unused state
       setNewExpenseAmount('');
       setNewExpenseReason('');
       setNewExpenseCategory('');
@@ -2962,7 +2963,7 @@ const ExpenseLogger = () => {
     setNewExpenseDate(new Date().toISOString().slice(0, 10));
     setNewExpensePropertyId(properties.length > 0 ? properties[0].id : '');
     setNewExpenseUnitId('');
-    setNewExpenseUnitNumber('');
+    // setNewExpenseUnitNumber(''); // Removed unused state
     setNewExpenseAmount('');
     setNewExpenseReason('');
     setNewExpenseCategory('');
@@ -2976,7 +2977,7 @@ const ExpenseLogger = () => {
     setNewExpenseDate(expense.date);
     setNewExpensePropertyId(expense.propertyId);
     setNewExpenseUnitId(expense.unitId || '');
-    setNewExpenseUnitNumber(expense.unitNumber || '');
+    // setNewExpenseUnitNumber(expense.unitNumber || ''); // Removed unused state
     setNewExpenseAmount(expense.amount);
     setNewExpenseReason(expense.reason);
     setNewExpenseCategory(expense.category || '');
@@ -3171,7 +3172,6 @@ const ExpenseLogger = () => {
               onChange={(e) => {
                 setNewExpensePropertyId(e.target.value);
                 setNewExpenseUnitId('');
-                setNewExpenseUnitNumber('');
               }}
               className="select select-bordered w-full"
               required
@@ -3191,9 +3191,7 @@ const ExpenseLogger = () => {
                 id="expenseUnit"
                 value={newExpenseUnitId}
                 onChange={(e) => {
-                  const selectedUnit = getUnitsForProperty(newExpensePropertyId).find(unit => unit.id === e.target.value);
                   setNewExpenseUnitId(e.target.value);
-                  setNewExpenseUnitNumber(selectedUnit ? selectedUnit.number : '');
                 }}
                 className="select select-bordered w-full"
                 required
