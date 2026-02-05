@@ -1,20 +1,24 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react'; // Add Suspense
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, query, where, writeBatch, doc } from 'firebase/firestore';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom';
 import { Home, Building, DollarSign, Receipt, Download, ListTodo, Mail as MailIcon, Eye, EyeOff, Menu, Moon, Sun, BarChart3 } from 'lucide-react';
+import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react'; // Add Suspense
 
 // Import our new organized files
 import { AppContext } from './context/AppContext';
 import { Toast } from './components/Shared';
-import Dashboard from './pages/Dashboard';
-import PropertyManager from './pages/PropertyManager';
-import RentTracker from './pages/RentTracker';
-import ExpenseManager from './pages/ExpenseManager';
-import ReportsAnalytics from './pages/ReportsAnalytics';
-import KanbanTaskManager from './pages/KanbanTaskManager';
-import ExportManager from './pages/ExportManager';
+import { LoadingScreen } from './components/Shared'; // Import the loader
+
+// Lazy Load the pages
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const PropertyManager = React.lazy(() => import('./pages/PropertyManager'));
+const RentTracker = React.lazy(() => import('./pages/RentTracker'));
+const ExpenseManager = React.lazy(() => import('./pages/ExpenseManager'));
+const ReportsAnalytics = React.lazy(() => import('./pages/ReportsAnalytics'));
+const KanbanTaskManager = React.lazy(() => import('./pages/KanbanTaskManager'));
+const ExportManager = React.lazy(() => import('./pages/ExportManager'));
 
 // --- Auth Screen Component ---
 const AuthScreen = () => {
@@ -93,18 +97,23 @@ const AppShell = () => {
             <div className="flex-1"><h1 className="text-xl font-black text-primary tracking-tight hidden lg:flex items-center gap-2"><Building/> RentalTracker</h1><span className="lg:hidden font-bold text-lg ml-2 capitalize">{location.pathname.replace('/','')}</span></div>
             <div className="flex-none gap-2"><label className="swap swap-rotate btn btn-ghost btn-circle"><input type="checkbox" onChange={()=>setTheme(theme==='winter'?'night':'winter')} checked={theme==='night'} /><Sun className="swap-on w-5 h-5"/><Moon className="swap-off w-5 h-5"/></label><button className="btn btn-ghost btn-circle" onClick={()=>signOut(auth)}><img src={`https://ui-avatars.com/api/?name=User&background=random`} alt="av" className="w-8 h-8 rounded-full"/></button></div>
           </div>
-          <main className="flex-1 p-4 lg:p-8 overflow-y-auto"><div className="max-w-7xl mx-auto animate-fade-in">
-                <Routes>
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/properties" element={<PropertyManager />} />
-                    <Route path="/rent" element={<RentTracker />} />
-                    <Route path="/expenses" element={<ExpenseManager />} />
-                    <Route path="/reports" element={<ReportsAnalytics />} />
-                    <Route path="/tasks" element={<KanbanTaskManager />} />
-                    <Route path="/export" element={<ExportManager />} />
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Routes>
-            </div></main>
+          <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
+            <div className="max-w-7xl mx-auto animate-fade-in">
+              {/* Wrap Routes in Suspense */}
+              <Suspense fallback={<LoadingScreen />}>
+                  <Routes>
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/properties" element={<PropertyManager />} />
+                      <Route path="/rent" element={<RentTracker />} />
+                      <Route path="/expenses" element={<ExpenseManager />} />
+                      <Route path="/reports" element={<ReportsAnalytics />} />
+                      <Route path="/tasks" element={<KanbanTaskManager />} />
+                      <Route path="/export" element={<ExportManager />} />
+                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+              </Suspense>
+            </div>
+          </main>
         </div>
         <div className="drawer-side z-40"><label htmlFor="nav-drawer" className="drawer-overlay"></label><ul className="menu p-4 w-72 min-h-full bg-base-100 text-base-content shadow-xl gap-2"><div className="mb-6 px-4 py-2 flex items-center gap-2 text-primary"><Building size={28}/> <span className="font-black text-2xl tracking-tighter">Tracker</span></div>{navItems.map(item => (<li key={item.path}><NavLink to={item.path} className={({ isActive }) => isActive ? 'active font-bold' : 'font-medium'} onClick={() => document.getElementById('nav-drawer').checked = false}><item.icon size={20}/> {item.label}</NavLink></li>))}</ul></div>
       </div>
