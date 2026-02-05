@@ -1,6 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { updateProfile } from 'firebase/auth';
-import { User, Save, ShieldAlert, LogOut } from 'lucide-react';
+import { User, Save, ShieldAlert } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 
 const Settings = () => {
