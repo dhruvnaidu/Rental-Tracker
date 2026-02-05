@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { FileJson, FileSpreadsheet } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 
 const ExportManager = () => {
