@@ -5,7 +5,7 @@ import { getFirestore, collection, addDoc, getDocs, deleteDoc, query, where, wri
 import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom';
 import { 
   Home, Building, DollarSign, Receipt, Download, ListTodo, Mail as MailIcon, 
-  Eye, EyeOff, Menu, Moon, Sun, BarChart3, Settings as SettingsIcon 
+  Eye, Menu, Moon, Sun, BarChart3, Settings as SettingsIcon 
 } from 'lucide-react';
 
 // Import Shared Tools
