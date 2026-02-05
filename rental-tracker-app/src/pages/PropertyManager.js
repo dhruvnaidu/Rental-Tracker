@@ -12,12 +12,34 @@ const PropertyManager = () => {
     const [form, setForm] = useState({});
 
     useEffect(() => {
-        const u = onSnapshot(collection(db, `artifacts/${__app_id}/users/${userId}/properties`), s => {
+        let unsubscribes = [];
+
+        const unsubProps = onSnapshot(collection(db, `artifacts/${__app_id}/users/${userId}/properties`), s => {
+            // Clean up old unit listeners
+            unsubscribes.forEach(unsub => unsub());
+            unsubscribes = [];
+
             const list = s.docs.map(d => ({ id: d.id, ...d.data(), units: [] }));
             setProps(list);
-            list.forEach(p => onSnapshot(collection(db, `artifacts/${__app_id}/users/${userId}/properties/${p.id}/units`), us => setProps(prev => prev.map(cur => cur.id === p.id ? { ...cur, units: us.docs.map(u => ({ id: u.id, ...u.data() })) } : cur))));
+
+            // Subscribe to each property's units
+            list.forEach(p => {
+                const unsubUnits = onSnapshot(
+                    collection(db, `artifacts/${__app_id}/users/${userId}/properties/${p.id}/units`),
+                    us => setProps(prev => prev.map(cur =>
+                        cur.id === p.id
+                            ? { ...cur, units: us.docs.map(u => ({ id: u.id, ...u.data() })) }
+                            : cur
+                    ))
+                );
+                unsubscribes.push(unsubUnits);
+            });
         });
-        return () => u();
+
+        return () => {
+            unsubProps();
+            unsubscribes.forEach(unsub => unsub());
+        };
     }, [db, userId, __app_id]);
 
     const handleSave = async () => {
