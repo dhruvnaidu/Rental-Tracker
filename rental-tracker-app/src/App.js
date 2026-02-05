@@ -1,17 +1,18 @@
-import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react'; // Add Suspense
+import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, query, where, writeBatch, doc } from 'firebase/firestore';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom';
-import { Home, Building, DollarSign, Receipt, Download, ListTodo, Mail as MailIcon, Eye, EyeOff, Menu, Moon, Sun, BarChart3 } from 'lucide-react';
-import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react'; // Add Suspense
+import { 
+  Home, Building, DollarSign, Receipt, Download, ListTodo, Mail as MailIcon, 
+  Eye, EyeOff, Menu, Moon, Sun, BarChart3, Settings as SettingsIcon 
+} from 'lucide-react';
 
-// Import our new organized files
+// Import Shared Tools
 import { AppContext } from './context/AppContext';
-import { Toast } from './components/Shared';
-import { LoadingScreen } from './components/Shared'; // Import the loader
+import { Toast, LoadingScreen } from './components/Shared';
 
-// Lazy Load the pages
+// Lazy Load Pages for Performance
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const PropertyManager = React.lazy(() => import('./pages/PropertyManager'));
 const RentTracker = React.lazy(() => import('./pages/RentTracker'));
@@ -19,8 +20,9 @@ const ExpenseManager = React.lazy(() => import('./pages/ExpenseManager'));
 const ReportsAnalytics = React.lazy(() => import('./pages/ReportsAnalytics'));
 const KanbanTaskManager = React.lazy(() => import('./pages/KanbanTaskManager'));
 const ExportManager = React.lazy(() => import('./pages/ExportManager'));
+const Settings = React.lazy(() => import('./pages/Settings'));
 
-// --- Auth Screen Component ---
+// --- Auth Screen ---
 const AuthScreen = () => {
   const { auth } = useContext(AppContext);
   const [email, setEmail] = useState('');
@@ -70,7 +72,7 @@ const AuthScreen = () => {
   );
 };
 
-// --- Main Layout Shell ---
+// --- App Shell ---
 const AppShell = () => {
     const { auth } = useContext(AppContext);
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'winter');
@@ -80,12 +82,14 @@ const AppShell = () => {
 
     const navItems = [
       { path: '/dashboard', icon: Home, label: 'Dashboard' },
-      { path: '/properties', icon: Building, label: 'Properties' },
+      // UPDATED LABEL:
+      { path: '/properties', icon: Building, label: 'Properties & Units' }, 
       { path: '/rent', icon: DollarSign, label: 'Rent' },
       { path: '/expenses', icon: Receipt, label: 'Expenses' },
       { path: '/reports', icon: BarChart3, label: 'Reports' },
       { path: '/tasks', icon: ListTodo, label: 'Tasks' },
       { path: '/export', icon: Download, label: 'Export' },
+      { path: '/settings', icon: SettingsIcon, label: 'Settings' },
     ];
 
     return (
@@ -99,18 +103,18 @@ const AppShell = () => {
           </div>
           <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
             <div className="max-w-7xl mx-auto animate-fade-in">
-              {/* Wrap Routes in Suspense */}
               <Suspense fallback={<LoadingScreen />}>
-                  <Routes>
-                      <Route path="/dashboard" element={<Dashboard />} />
-                      <Route path="/properties" element={<PropertyManager />} />
-                      <Route path="/rent" element={<RentTracker />} />
-                      <Route path="/expenses" element={<ExpenseManager />} />
-                      <Route path="/reports" element={<ReportsAnalytics />} />
-                      <Route path="/tasks" element={<KanbanTaskManager />} />
-                      <Route path="/export" element={<ExportManager />} />
-                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                  </Routes>
+                <Routes>
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/properties" element={<PropertyManager />} />
+                    <Route path="/rent" element={<RentTracker />} />
+                    <Route path="/expenses" element={<ExpenseManager />} />
+                    <Route path="/reports" element={<ReportsAnalytics />} />
+                    <Route path="/tasks" element={<KanbanTaskManager />} />
+                    <Route path="/export" element={<ExportManager />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
               </Suspense>
             </div>
           </main>
@@ -199,4 +203,5 @@ const App = () => {
     </AppContext.Provider>
   );
 };
+
 export default App;

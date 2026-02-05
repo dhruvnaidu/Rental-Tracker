@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { collection, doc, updateDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { ListTodo, Calendar as CalendarIcon } from 'lucide-react';
+import { collection, doc, updateDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { ListTodo, Calendar as CalendarIcon, Trash2 } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
-import { formatCurrency } from '../utils/helpers';
+import { formatCurrency, formatDate } from '../utils/helpers';
 
 const RentTracker = () => {
     const { db, userId, __app_id, showToast } = useContext(AppContext);
@@ -16,7 +16,26 @@ const RentTracker = () => {
         return () => unsub();
     }, [db, userId, __app_id, month]);
 
-    const togglePaid = async (r) => { await updateDoc(doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, r.id), { isPaid: !r.isPaid, amountReceived: !r.isPaid ? r.amount : 0, paymentDate: !r.isPaid ? new Date().toISOString() : null }); showToast('Updated', 'success'); };
+    const togglePaid = async (r) => { 
+        await updateDoc(doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, r.id), { 
+            isPaid: !r.isPaid, 
+            amountReceived: !r.isPaid ? r.amount : 0, 
+            paymentDate: !r.isPaid ? new Date().toISOString() : null 
+        }); 
+        showToast('Status updated', 'success'); 
+    };
+
+    // --- NEW: Delete Rent Record ---
+    const handleDelete = async (id) => {
+        if(!window.confirm("Are you sure you want to delete this rent record?")) return;
+        try {
+            await deleteDoc(doc(db, `artifacts/${__app_id}/users/${userId}/rentRecords`, id));
+            showToast('Rent record deleted', 'success');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    };
+
     const stats = records.reduce((acc, r) => ({ total: acc.total + r.amount, paid: acc.paid + (r.amountReceived || 0) }), { total: 0, paid: 0 });
 
     const CalendarView = () => {
@@ -36,10 +55,55 @@ const RentTracker = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center gap-4"><div className="flex items-center gap-4"><h2 className="text-3xl font-bold">Rent</h2><div className="join"><button className={`join-item btn btn-sm ${view==='list'?'btn-primary':''}`} onClick={()=>setView('list')}><ListTodo size={16}/></button><button className={`join-item btn btn-sm ${view==='cal'?'btn-primary':''}`} onClick={()=>setView('cal')}><CalendarIcon size={16}/></button></div></div><input type="month" className="input input-bordered input-sm" value={month} onChange={e=>setMonth(e.target.value)} /></div>
-            <div className="card bg-base-100 shadow border border-base-200 p-4 flex-row items-center justify-between"><div><div className="text-xs uppercase font-bold opacity-50">Collected</div><div className="text-2xl font-black text-success">{formatCurrency(stats.paid)}</div></div><div><div className="text-xs uppercase font-bold opacity-50 text-right">Pending</div><div className="text-2xl font-black text-error text-right">{formatCurrency(stats.total - stats.paid)}</div></div></div>
-            {view === 'list' ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{records.map(r => <div key={r.id} className={`card bg-base-100 shadow-sm border-l-4 ${r.isPaid ? 'border-success' : 'border-warning'}`}><div className="card-body p-4"><div className="flex justify-between items-start"><div><div className="font-bold text-lg">Unit {r.unitNumber}</div><div className="text-sm opacity-60">{r.tenantName}</div></div><div className={`badge ${r.isPaid ? 'badge-success' : 'badge-warning'}`}>{r.isPaid ? 'Paid' : 'Pending'}</div></div><div className="flex justify-between items-center mt-4"><div className="font-mono font-bold">{formatCurrency(r.amount)}</div><button className={`btn btn-sm ${r.isPaid ? 'btn-ghost' : 'btn-success'}`} onClick={()=>togglePaid(r)}>{r.isPaid ? 'Undo' : 'Pay'}</button></div></div></div>)}</div> : <CalendarView />}
+            <div className="flex justify-between items-center gap-4">
+                <div className="flex items-center gap-4">
+                    <h2 className="text-3xl font-bold">Rent</h2>
+                    <div className="join">
+                        <button className={`join-item btn btn-sm ${view==='list'?'btn-primary':''}`} onClick={()=>setView('list')}><ListTodo size={16}/></button>
+                        <button className={`join-item btn btn-sm ${view==='cal'?'btn-primary':''}`} onClick={()=>setView('cal')}><CalendarIcon size={16}/></button>
+                    </div>
+                </div>
+                <input type="month" className="input input-bordered input-sm" value={month} onChange={e=>setMonth(e.target.value)} />
+            </div>
+
+            <div className="card bg-base-100 shadow border border-base-200 p-4 flex-row items-center justify-between">
+                <div><div className="text-xs uppercase font-bold opacity-50">Collected</div><div className="text-2xl font-black text-success">{formatCurrency(stats.paid)}</div></div>
+                <div><div className="text-xs uppercase font-bold opacity-50 text-right">Pending</div><div className="text-2xl font-black text-error text-right">{formatCurrency(stats.total - stats.paid)}</div></div>
+            </div>
+
+            {view === 'list' ? 
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {records.map(r => (
+                        <div key={r.id} className={`card bg-base-100 shadow-sm border-l-4 ${r.isPaid ? 'border-success' : 'border-warning'}`}>
+                            <div className="card-body p-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <div className="font-bold text-lg">Unit {r.unitNumber}</div>
+                                        <div className="text-sm opacity-60">{r.tenantName}</div>
+                                        {r.dueDate && <div className="text-xs opacity-40 mt-1">Due: {formatDate(r.dueDate)}</div>}
+                                    </div>
+                                    <div className={`badge ${r.isPaid ? 'badge-success' : 'badge-warning'}`}>{r.isPaid ? 'Paid' : 'Pending'}</div>
+                                </div>
+                                <div className="flex justify-between items-center mt-4">
+                                    <div className="font-mono font-bold">{formatCurrency(r.amount)}</div>
+                                    <div className="flex gap-2">
+                                        {/* DELETE BUTTON */}
+                                        <button className="btn btn-sm btn-ghost text-error" onClick={() => handleDelete(r.id)} title="Delete Record">
+                                            <Trash2 size={16}/>
+                                        </button>
+                                        <button className={`btn btn-sm ${r.isPaid ? 'btn-ghost' : 'btn-success'}`} onClick={()=>togglePaid(r)}>
+                                            {r.isPaid ? 'Undo' : 'Pay'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {records.length === 0 && <div className="col-span-full text-center py-10 opacity-50 italic">No rent records found for this month.</div>}
+                </div> 
+            : <CalendarView />}
         </div>
     );
 };
+
 export default RentTracker;
