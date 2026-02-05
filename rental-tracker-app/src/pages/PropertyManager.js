@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { Building, PlusCircle, Edit, Trash2, User, Phone, Mail, Calendar, TrendingUp } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import { formatCurrency } from '../utils/helpers';
-import { Modal, Toast } from '../components/Shared';
+import { Modal } from '../components/Shared';
 
 const PropertyManager = () => {
     const { db, userId, __app_id, showToast, generateRentRecordsForUnit } = useContext(AppContext);

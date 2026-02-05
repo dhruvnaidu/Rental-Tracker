@@ -3,9 +3,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, query, where, writeBatch, doc } from 'firebase/firestore';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom';
-import { 
-  Home, Building, DollarSign, Receipt, Download, ListTodo, Mail as MailIcon, 
-  Eye, EyeOff, Menu, Moon, Sun, BarChart3, Settings as SettingsIcon 
+import {
+  Home, Building, DollarSign, Receipt, Download, ListTodo, Mail as MailIcon,
+  Eye, Menu, Moon, Sun, BarChart3, Settings as SettingsIcon
 } from 'lucide-react';
 
 // Import Shared Tools
